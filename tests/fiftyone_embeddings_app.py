@@ -26,6 +26,7 @@ or, equivalently:
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 import fiftyone as fo
 import fiftyone.brain as fob
@@ -47,7 +48,7 @@ CONFIDENCE_THRESHOLD = 0.5
 BATCH_SIZE = 4
 # Limit the number of images loaded per split while iterating on the workflow. Set to
 # `None` to process the full split once you're happy with the results.
-MAX_SAMPLES_PER_SPLIT: int | None = None
+MAX_SAMPLES_PER_SPLIT: int | None = 30
 IOU_THRESHOLD = 0.3
 # Confidence threshold used only to select the best-matching query for each ground truth
 # object (for GT-side embedding attachment). Effectively "keep everything": sigmoid scores
@@ -59,7 +60,7 @@ GT_MATCH_THRESHOLD = -1.0
 # it from scratch: reloads the COCO splits, reruns RF-DETR inference (including decoder
 # embeddings), re-evaluates against ground truth, and recomputes the embedding
 # visualization. Set back to False for subsequent runs to reuse the cached dataset.
-OVERRIDE: bool = False
+OVERRIDE: bool = True
 # -----------------------------------------------------------------------------------
 
 
@@ -271,6 +272,38 @@ def evaluate_and_flag_misclassifications(dataset: fo.Dataset) -> None:
             detection["misclassified"] = detection.eval == "fp" and detection.eval_loc == "tp"
 
 
+def _safe_tsne_params(
+    dataset: fo.Dataset,
+    patches_field: str,
+    default_pca_dims: int = 50,
+    default_perplexity: float = 30.0,
+) -> tuple[Optional[int], float]:
+    """Caps t-SNE's PCA/perplexity settings to values valid for the available patch count.
+
+    `fiftyone.brain`'s t-SNE visualization runs a PCA step (50 components by default)
+    before t-SNE, then t-SNE itself with a default perplexity of 30. `sklearn` requires
+    `n_components <= min(n_samples, n_features)` for PCA and `perplexity < n_samples` for
+    t-SNE, so small evaluation sets (few detections) raise a `ValueError` when the defaults
+    exceed the number of patches. This clamps both to values safe for `num_patches`.
+
+    Args:
+        dataset: The dataset containing `patches_field` detections.
+        patches_field: The detections field (e.g. `"predictions"` or `"ground_truth"`) whose
+            patch count bounds the parameters below.
+        default_pca_dims: The default number of PCA components `fiftyone.brain` would
+            otherwise use.
+        default_perplexity: The default t-SNE perplexity `fiftyone.brain` would otherwise use.
+
+    Returns:
+        A `(pca_dims, perplexity)` tuple, where `pca_dims` may be `None` to skip the PCA
+        step entirely when there are too few patches for it to be useful.
+    """
+    num_patches = dataset.count(f"{patches_field}.detections")
+    pca_dims = None if num_patches < 2 else min(default_pca_dims, num_patches - 1)
+    perplexity = min(default_perplexity, max(num_patches - 1, 1))
+    return pca_dims, perplexity
+
+
 def compute_embedding_visualization(dataset: fo.Dataset) -> None:
     """Projects the per-detection decoder embeddings to 2D for inspection in the App.
 
@@ -287,20 +320,26 @@ def compute_embedding_visualization(dataset: fo.Dataset) -> None:
             `embedding` attribute, as populated by `add_predictions`.
     """
     if "query_embeddings_2d" not in dataset.list_brain_runs():
+        pca_dims, perplexity = _safe_tsne_params(dataset, "predictions")
         fob.compute_visualization(
             dataset,
             patches_field="predictions",
             embeddings="embedding",
             brain_key="query_embeddings_2d",
             method="tsne",
+            pca_dims=pca_dims,
+            perplexity=perplexity,
         )
     if "ground_truth_embeddings_2d" not in dataset.list_brain_runs():
+        pca_dims, perplexity = _safe_tsne_params(dataset, "ground_truth")
         fob.compute_visualization(
             dataset,
             patches_field="ground_truth",
             embeddings="embedding",
             brain_key="ground_truth_embeddings_2d",
             method="tsne",
+            pca_dims=pca_dims,
+            perplexity=perplexity,
         )
 
 
