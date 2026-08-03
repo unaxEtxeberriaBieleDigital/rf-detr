@@ -45,6 +45,7 @@ from rfdetr.models.backbone.dinov2 import DinoV2
 from rfdetr.utilities.distributed import is_main_process
 from rfdetr.utilities.keypoints import _is_bg_first_schema, precision_cholesky_to_pixel_covariance
 from rfdetr.utilities.logger import get_logger
+from rfdetr.utilities.detections import RFDETRDetections, stack_decoder_layers
 
 if TYPE_CHECKING:
     from supervision import Detections, KeyPoints
@@ -2138,8 +2139,9 @@ class RFDETR:
         shape: tuple[int, int] | None = None,
         patch_size: int | None = None,
         include_source_image: bool = True,
+        return_query_embeddings: bool = False,
         **kwargs: Any,
-    ) -> Detections | KeyPoints | list[Detections | KeyPoints]:
+    ) -> RFDETRDetections | KeyPoints | list[RFDETRDetections | KeyPoints]:
         """Performs model inference on the input images.
 
         This method accepts a single image or a list of images in various formats (file path, image url, PIL Image,
@@ -2334,22 +2336,23 @@ class RFDETR:
         if self._is_optimized_for_inference:
             inference_model = self.model.inference_model
             assert inference_model is not None, "inference_model is set whenever _is_optimized_for_inference is True."
-            predictions = inference_model(batch_tensor.to(dtype=self._optimized_dtype))
+            predictions = inference_model(batch_tensor.to(dtype=self._optimized_dtype), return_query_embeddings=return_query_embeddings)
         else:
             model = self.model.model
             assert model is not None, "self.model.model is only cleared when optimized for inference."
-            predictions = model(batch_tensor)
+            predictions = model(batch_tensor, return_query_embeddings=return_query_embeddings)
         if isinstance(predictions, tuple):
             return_predictions = {
                 "pred_logits": predictions[1],
                 "pred_boxes": predictions[0],
             }
-            if len(predictions) == 3:
+            if len(predictions) == 3 and not "query_embeddings" in predictions:
                 # Distinguish optional keypoint vs mask tuple output for legacy compiled/export shims.
                 if getattr(getattr(self.model, "args", None), "use_grouppose_keypoints", False):
                     return_predictions["pred_keypoints"] = predictions[2]
                 else:
                     return_predictions["pred_masks"] = predictions[2]
+
             predictions = return_predictions
         target_sizes = torch.tensor(orig_sizes, device=self.model.device)
         results = self.model.postprocess(predictions, target_sizes=target_sizes)
@@ -2389,7 +2392,10 @@ class RFDETR:
             _class_id_to_name = {slot: model_class_names[i] for i, slot in enumerate(_kp_foreground_slots) if i < n}
         else:
             _class_id_to_name = dict(enumerate(model_class_names))
-        predictions_list: list[Detections | KeyPoints] = []
+        predictions_list: list[RFDETRDetections | KeyPoints] = []
+        stacked_query_embeddings = (
+            stack_decoder_layers(predictions["query_embeddings"]) if return_query_embeddings else None
+        )
         for i, result in enumerate(results):
             scores = result["scores"]
             labels = result["labels"]
@@ -2399,6 +2405,10 @@ class RFDETR:
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
+            query_embeddings = None
+            if stacked_query_embeddings is not None:
+                # stacked_query_embeddings: [batch_size, num_queries, num_decoder_layers * hidden_dim]
+                query_embeddings = stacked_query_embeddings[i][keep].float().cpu().numpy()
             keypoints_array = None
             if "keypoints" in result:
                 keypoints = result["keypoints"][keep]
@@ -2409,17 +2419,19 @@ class RFDETR:
                 masks = result["masks"]
                 masks = masks[keep]
 
-                detections = Detections(
+                detections = RFDETRDetections(
                     xyxy=boxes.float().cpu().numpy(),
                     confidence=scores.float().cpu().numpy(),
                     class_id=labels.cpu().numpy(),
                     mask=masks.squeeze(1).cpu().numpy(),
+                    query_embeddings=query_embeddings,
                 )
             else:
-                detections = Detections(
+                detections = RFDETRDetections(
                     xyxy=boxes.float().cpu().numpy(),
                     confidence=scores.float().cpu().numpy(),
                     class_id=labels.cpu().numpy(),
+                    query_embeddings=query_embeddings,
                 )
             if "keypoint_precision_cholesky" in result:
                 keypoint_precision = result["keypoint_precision_cholesky"][keep]

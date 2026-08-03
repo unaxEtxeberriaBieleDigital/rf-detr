@@ -456,7 +456,7 @@ class LWDETR(nn.Module):
             class_boost = class_boost[..., :detection_num_classes]
         return class_boost
 
-    def forward(self, samples: NestedTensor, targets: list[dict[str, Tensor]] | None = None) -> dict[str, Any]:
+    def forward(self, samples: NestedTensor, targets: list[dict[str, Tensor]] | None = None, return_query_embeddings: bool = False) -> dict[str, Any]:
         """The forward expects a NestedTensor, which consists of:
 
            - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
@@ -519,6 +519,8 @@ class LWDETR(nn.Module):
 
         out: dict[str, Any] = {}
         if hs is not None:
+            if return_query_embeddings:
+                out["query_embeddings"] = hs
             if self.bbox_reparam:
                 outputs_coord_delta = self.bbox_embed(hs)
                 outputs_coord_cxcy = outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
@@ -558,6 +560,9 @@ class LWDETR(nn.Module):
                 outputs_masks = seg_head_fwd(features[0].tensors, hs, cast(tuple[int, int], samples.tensors.shape[-2:]))
 
             out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
+            if return_query_embeddings:
+                out["query_embeddings"] = hs
+
             if self.segmentation_head is not None:
                 out["pred_masks"] = outputs_masks[-1]
             if outputs_keypoints is not None:
