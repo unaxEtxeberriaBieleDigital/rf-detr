@@ -29,6 +29,7 @@ import os
 
 import fiftyone as fo
 import fiftyone.brain as fob
+import numpy as np
 from PIL import Image
 from tqdm.auto import tqdm
 
@@ -47,7 +48,13 @@ BATCH_SIZE = 4
 # Limit the number of images loaded per split while iterating on the workflow. Set to
 # `None` to process the full split once you're happy with the results.
 MAX_SAMPLES_PER_SPLIT: int | None = None
-IOU_THRESHOLD = 0.5
+IOU_THRESHOLD = 0.3
+# Confidence threshold used only to select the best-matching query for each ground truth
+# object (for GT-side embedding attachment). Effectively "keep everything": sigmoid scores
+# are always > 0, so a single low-threshold `predict()` call returns (near) every decoder
+# query's box/score/embedding, letting both the `predictions` field and the GT-query IoU
+# matching below be derived from one inference pass instead of two.
+GT_MATCH_THRESHOLD = -1.0
 # If True, deletes any existing FiftyOne dataset with `FIFTYONE_DATASET_NAME` and rebuilds
 # it from scratch: reloads the COCO splits, reruns RF-DETR inference (including decoder
 # embeddings), re-evaluates against ground truth, and recomputes the embedding
@@ -102,13 +109,25 @@ def build_dataset() -> fo.Dataset:
     dataset = fo.Dataset(FIFTYONE_DATASET_NAME, persistent=True)
     for split in SPLITS:
         split_dir = os.path.join(DATASET_ROOT, split)
-        full_split_dataset = fo.Dataset.from_dir(
+        # The COCO annotation file only lists images considered for labeling; the split
+        # directory typically also contains additional (background/unlabeled) images that
+        # `from_dir(..., COCODetectionDataset, ...)` would silently skip. Load every image
+        # file in the directory first, then merge in `ground_truth` labels for the subset
+        # that has COCO annotations, leaving the rest with no ground truth.
+        coco_dataset = fo.Dataset.from_dir(
             dataset_type=fo.types.COCODetectionDataset,
             data_path=split_dir,
             labels_path=os.path.join(split_dir, "_annotations.coco.json"),
             label_field="ground_truth",
             label_types="detections",
         )
+        full_split_dataset = fo.Dataset.from_dir(
+            dataset_type=fo.types.ImageDirectory,
+            dataset_dir=split_dir,
+        )
+        full_split_dataset.merge_samples(coco_dataset, key_field="filepath")
+        coco_dataset.delete()
+
         split_view = (
             full_split_dataset.take(MAX_SAMPLES_PER_SPLIT)
             if MAX_SAMPLES_PER_SPLIT is not None
@@ -121,32 +140,66 @@ def build_dataset() -> fo.Dataset:
     return dataset
 
 
+def _xyxy_iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """Computes IoU between one absolute-pixel ``xyxy`` box and an array of such boxes.
+
+    Args:
+        box: A single box, shape ``(4,)``, as ``[x1, y1, x2, y2]`` in pixel coordinates.
+        boxes: Candidate boxes, shape ``(N, 4)``, in the same coordinate system as `box`.
+
+    Returns:
+        Array of shape ``(N,)`` with the IoU between `box` and each row of `boxes`. Pairs
+        with zero union (e.g. `boxes` is empty or a candidate box has zero area) get 0.0.
+    """
+    x1 = np.maximum(box[0], boxes[:, 0])
+    y1 = np.maximum(box[1], boxes[:, 1])
+    x2 = np.minimum(box[2], boxes[:, 2])
+    y2 = np.minimum(box[3], boxes[:, 3])
+    inter = np.clip(x2 - x1, a_min=0, a_max=None) * np.clip(y2 - y1, a_min=0, a_max=None)
+    area_box = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+    area_boxes = np.clip(boxes[:, 2] - boxes[:, 0], a_min=0, a_max=None) * np.clip(
+        boxes[:, 3] - boxes[:, 1], a_min=0, a_max=None
+    )
+    union = area_box + area_boxes - inter
+    return np.divide(inter, union, out=np.zeros_like(inter, dtype=float), where=union > 0)
+
+
 def add_predictions(dataset: fo.Dataset, model: RFDETRLarge) -> None:
     """Runs RF-DETR over every sample, storing predictions and per-detection embeddings.
 
+    A single low-threshold inference pass (`GT_MATCH_THRESHOLD`) returns essentially every
+    decoder query's box/score/embedding for each image. This is used both to build the usual
+    `predictions` field (by filtering to `CONFIDENCE_THRESHOLD`) and to attach the embedding
+    of the best IoU-matching query to every `ground_truth` detection - including objects the
+    model missed (confidence below `CONFIDENCE_THRESHOLD`) - so undetected ground truth
+    objects can still be inspected/compared in embedding space.
+
     Args:
-        dataset: The FiftyOne dataset to populate with a `predictions` label field.
+        dataset: The FiftyOne dataset to populate with a `predictions` label field and
+            per-`ground_truth`-detection `embedding`/`matched_query_confidence`/
+            `matched_query_iou`/`detected` attributes.
         model: A loaded RF-DETR model used to run inference.
     """
     samples = list(dataset)
     for start in tqdm(range(0, len(samples), BATCH_SIZE), desc="Running inference"):
         batch = samples[start : start + BATCH_SIZE]
         paths = [sample.filepath for sample in batch]
-        predictions = model.predict(
+        all_detections = model.predict(
             paths,
-            threshold=CONFIDENCE_THRESHOLD,
+            threshold=GT_MATCH_THRESHOLD,
             include_source_image=False,
             return_query_embeddings=True,
         )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
+        if not isinstance(all_detections, list):
+            all_detections = [all_detections]
 
-        for sample, detections in zip(batch, predictions):
+        for sample, detections in zip(batch, all_detections):
             with Image.open(sample.filepath) as img:
                 width, height = img.size
 
+            keep = detections.confidence > CONFIDENCE_THRESHOLD
             fo_detections = []
-            for i in range(len(detections)):
+            for i in np.flatnonzero(keep):
                 x1, y1, x2, y2 = detections.xyxy[i]
                 label = str(detections.data["class_name"][i])
                 confidence = float(detections.confidence[i])
@@ -167,6 +220,22 @@ def add_predictions(dataset: fo.Dataset, model: RFDETRLarge) -> None:
                 )
 
             sample["predictions"] = fo.Detections(detections=fo_detections)
+
+            gt_detections = sample.ground_truth.detections if sample.ground_truth is not None else []
+            if gt_detections and len(detections) > 0:
+                for gt_detection in gt_detections:
+                    gx, gy, gw, gh = gt_detection.bounding_box
+                    gt_box_abs = np.array(
+                        [gx * width, gy * height, (gx + gw) * width, (gy + gh) * height]
+                    )
+                    ious = _xyxy_iou(gt_box_abs, detections.xyxy)
+                    best_idx = int(np.argmax(ious))
+                    matched_confidence = float(detections.confidence[best_idx])
+                    gt_detection["embedding"] = detections.query_embeddings[best_idx].tolist()
+                    gt_detection["matched_query_confidence"] = matched_confidence
+                    gt_detection["matched_query_iou"] = float(ious[best_idx])
+                    gt_detection["detected"] = matched_confidence > CONFIDENCE_THRESHOLD
+
             sample.save()
 
 
@@ -205,17 +274,34 @@ def evaluate_and_flag_misclassifications(dataset: fo.Dataset) -> None:
 def compute_embedding_visualization(dataset: fo.Dataset) -> None:
     """Projects the per-detection decoder embeddings to 2D for inspection in the App.
 
+    Computes two separate 2D projections (FiftyOne's Embeddings panel visualizes one
+    labels field per brain run): one over predicted objects (`predictions`) and one over
+    ground truth objects (`ground_truth`), including ground truth objects the model missed
+    (their embedding is the best IoU-matching query regardless of its confidence, see
+    `add_predictions`). Keeping them as two runs lets each be inspected/filtered
+    independently in the App while still allowing side-by-side comparison of GT vs.
+    predicted embeddings for the same object.
+
     Args:
-        dataset: The dataset with `predictions` detections carrying an `embedding`
-            attribute, as populated by `add_predictions`.
+        dataset: The dataset with `predictions` and `ground_truth` detections carrying an
+            `embedding` attribute, as populated by `add_predictions`.
     """
-    fob.compute_visualization(
-        dataset,
-        patches_field="predictions",
-        embeddings="embedding",
-        brain_key="query_embeddings_2d",
-        method="tsne",
-    )
+    if "query_embeddings_2d" not in dataset.list_brain_runs():
+        fob.compute_visualization(
+            dataset,
+            patches_field="predictions",
+            embeddings="embedding",
+            brain_key="query_embeddings_2d",
+            method="tsne",
+        )
+    if "ground_truth_embeddings_2d" not in dataset.list_brain_runs():
+        fob.compute_visualization(
+            dataset,
+            patches_field="ground_truth",
+            embeddings="embedding",
+            brain_key="ground_truth_embeddings_2d",
+            method="tsne",
+        )
 
 
 def save_views(dataset: fo.Dataset) -> None:
@@ -290,7 +376,9 @@ def main() -> None:
         add_predictions(dataset, model)
         evaluate_and_flag_misclassifications(dataset)
 
-    if "query_embeddings_2d" not in dataset.list_brain_runs():
+    embeddings_missing = "query_embeddings_2d" not in dataset.list_brain_runs()
+    embeddings_missing = embeddings_missing or "ground_truth_embeddings_2d" not in dataset.list_brain_runs()
+    if embeddings_missing:
         logger.info("Computing 2D embedding visualization...")
         compute_embedding_visualization(dataset)
 

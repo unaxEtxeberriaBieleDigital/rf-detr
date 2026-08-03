@@ -70,7 +70,7 @@ class PostProcess(nn.Module):
             )
         if out_keypoints is not None:
             return self._postprocess_keypoints(out_keypoints, scores, labels, boxes, topk_boxes, target_sizes)
-        return self._postprocess_boxes(scores, labels, boxes)
+        return self._postprocess_boxes(scores, labels, boxes, topk_boxes)
 
     @staticmethod
     def _validate_outputs(
@@ -183,7 +183,7 @@ class PostProcess(nn.Module):
         """
         results = []
         for i in range(out_masks.shape[0]):
-            res_i = {"scores": scores[i], "labels": labels[i], "boxes": boxes[i]}
+            res_i = {"scores": scores[i], "labels": labels[i], "boxes": boxes[i], "query_indices": topk_boxes[i]}
             k_idx = topk_boxes[i]
             masks_i = torch.gather(
                 out_masks[i],
@@ -275,6 +275,7 @@ class PostProcess(nn.Module):
                     "boxes": boxes_i,
                     "keypoints": output_keypoints,
                     "keypoint_precision_cholesky": output_keypoint_precision,
+                    "query_indices": topk_boxes[i],
                 }
             )
         return results
@@ -485,6 +486,7 @@ class PostProcess(nn.Module):
         scores: torch.Tensor,
         labels: torch.Tensor,
         boxes: torch.Tensor,
+        topk_boxes: torch.Tensor,
     ) -> list[dict[str, torch.Tensor]]:
         """Build detection-only result dictionaries.
 
@@ -492,8 +494,14 @@ class PostProcess(nn.Module):
             scores: Selected object scores with shape ``(B, K)``.
             labels: Selected class labels with shape ``(B, K)``.
             boxes: Selected absolute boxes with shape ``(B, K, 4)``.
+            topk_boxes: Query indices selected by :meth:`_select_topk`, with shape ``(B, K)``. Selected
+                query index for each detection, needed by callers (e.g. ``query_embeddings`` gathering in
+                ``RFDETR.predict``) to align auxiliary per-query tensors that are not gathered here.
 
         Returns:
-            One result dict per image containing scores, labels, and boxes.
+            One result dict per image containing scores, labels, boxes, and the originating query index.
         """
-        return [{"scores": score, "labels": label, "boxes": box} for score, label, box in zip(scores, labels, boxes)]
+        return [
+            {"scores": score, "labels": label, "boxes": box, "query_indices": qidx}
+            for score, label, box, qidx in zip(scores, labels, boxes, topk_boxes)
+        ]

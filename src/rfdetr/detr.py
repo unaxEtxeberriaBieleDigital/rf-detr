@@ -42,13 +42,13 @@ from rfdetr.datasets.coco import is_valid_coco_dataset
 from rfdetr.datasets.yolo import REQUIRED_YOLO_YAML_FILES, is_valid_yolo_dataset
 from rfdetr.inference import ModelContext, _build_model_context
 from rfdetr.models.backbone.dinov2 import DinoV2
+from rfdetr.utilities.detections import RFDETRDetections, stack_decoder_layers
 from rfdetr.utilities.distributed import is_main_process
 from rfdetr.utilities.keypoints import _is_bg_first_schema, precision_cholesky_to_pixel_covariance
 from rfdetr.utilities.logger import get_logger
-from rfdetr.utilities.detections import RFDETRDetections, stack_decoder_layers
 
 if TYPE_CHECKING:
-    from supervision import Detections, KeyPoints
+    from supervision import KeyPoints
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -2211,7 +2211,7 @@ class RFDETR:
                 either dimension is zero or negative, if either dimension is not divisible by ``patch_size *
                 num_windows``, or if ``patch_size`` is not a positive integer.
         """
-        from supervision import Detections, KeyPoints
+        from supervision import KeyPoints
 
         patch_size = _resolve_patch_size(patch_size, self.model_config, "predict")
         num_windows = getattr(self.model_config, "num_windows", 1)
@@ -2346,7 +2346,7 @@ class RFDETR:
                 "pred_logits": predictions[1],
                 "pred_boxes": predictions[0],
             }
-            if len(predictions) == 3 and not "query_embeddings" in predictions:
+            if len(predictions) == 3 and "query_embeddings" not in predictions:
                 # Distinguish optional keypoint vs mask tuple output for legacy compiled/export shims.
                 if getattr(getattr(self.model, "args", None), "use_grouppose_keypoints", False):
                     return_predictions["pred_keypoints"] = predictions[2]
@@ -2407,8 +2407,14 @@ class RFDETR:
             boxes = boxes[keep]
             query_embeddings = None
             if stacked_query_embeddings is not None:
-                # stacked_query_embeddings: [batch_size, num_queries, num_decoder_layers * hidden_dim]
-                query_embeddings = stacked_query_embeddings[i][keep].float().cpu().numpy()
+                # stacked_query_embeddings: [batch_size, num_queries, num_decoder_layers * hidden_dim].
+                # `result["query_indices"]` maps each of the top-k selected (query, class) pairs back to
+                # its originating query row — top-k selection is sorted by score, not query index, so it
+                # must be gathered explicitly (the same way boxes/masks/keypoints already are inside
+                # PostProcess) before applying `keep`; boolean-indexing the query-order tensor directly
+                # with `keep` would silently misalign embeddings with their boxes.
+                query_indices = result["query_indices"][keep]
+                query_embeddings = stacked_query_embeddings[i][query_indices].float().cpu().numpy()
             keypoints_array = None
             if "keypoints" in result:
                 keypoints = result["keypoints"][keep]

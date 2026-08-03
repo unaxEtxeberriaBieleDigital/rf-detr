@@ -18,7 +18,7 @@ from rfdetr.detr import RFDETR
 from rfdetr.utilities.keypoints import precision_cholesky_to_pixel_covariance
 from tests._online import is_online
 
-from .helpers import _DummyModel, _DummyRFDETR
+from .helpers import _DummyModel, _DummyRFDETR, _QueryEmbeddingDummyModel
 
 _HTTP_IMAGE_URL = "http://images.cocodataset.org/val2017/000000397133.jpg"
 _HTTP_HOST = "images.cocodataset.org"
@@ -103,6 +103,44 @@ class _TupleOutputModelContext:
                 result["keypoints"] = torch.full((1, 17, 3), 0.5)
             results.append(result)
         return results
+
+
+class TestPredictQueryEmbeddingsAlignment:
+    """``query_embeddings`` must be gathered by the top-k query index, not by list position.
+
+    Top-k selection (``PostProcess._select_topk``) sorts by score, so the selected detections'
+    order rarely matches the underlying query order. ``predict()`` must gather each detection's
+    embedding using ``result["query_indices"]`` (mirroring how boxes/masks/keypoints are already
+    gathered inside ``PostProcess``), not by boolean-indexing the query-order embedding tensor with
+    the confidence ``keep`` mask directly.
+    """
+
+    def test_embeddings_follow_query_indices_not_list_position(self) -> None:
+        """Each returned embedding must equal its originating query index, per ``query_indices``."""
+        img = PIL.Image.new("RGB", (64, 48), color=(128, 128, 128))
+        model = _DummyRFDETR()
+        model.model = _QueryEmbeddingDummyModel(num_queries=3, hidden_dim=2)
+
+        detections = model.predict(img, threshold=0.0, return_query_embeddings=True)
+
+        expected_query_indices = model.model.query_indices.numpy()
+        assert detections.query_embeddings is not None
+        # Embedding for query q was fabricated as [q, q]; comparing column 0 recovers the query
+        # index that produced each detection's embedding.
+        np.testing.assert_array_equal(detections.query_embeddings[:, 0], expected_query_indices)
+
+    def test_embeddings_align_after_confidence_filtering(self) -> None:
+        """A non-trivial ``threshold`` keeps ``query_indices`` and embeddings aligned after filtering."""
+        img = PIL.Image.new("RGB", (64, 48), color=(128, 128, 128))
+        model = _DummyRFDETR()
+        model.model = _QueryEmbeddingDummyModel(num_queries=3, hidden_dim=2)
+
+        detections = model.predict(img, threshold=0.5, return_query_embeddings=True)
+
+        # All three stub detections score 0.9, so threshold=0.5 keeps all of them; this exercises
+        # the `keep` boolean filter still being applied to `query_indices` before the gather.
+        expected_query_indices = model.model.query_indices.numpy()
+        np.testing.assert_array_equal(detections.query_embeddings[:, 0], expected_query_indices)
 
 
 def _make_optimized_keypoint_model() -> tuple[RFDETR, _TupleOutputModelContext]:
