@@ -12,8 +12,13 @@ The per-detection embeddings (concatenated across decoder layers) are attached t
 predicted object so they can be visualized in 2D (UMAP/t-SNE) directly in the App, and
 compared against ground truth labels.
 
-Usage (always via the project venv so CUDA torch is used, not ``uv run`` which resyncs
-the CPU-only locked torch version):
+Usage - ALWAYS via the project venv so CUDA torch is used, never ``uv run``/``uv sync``
+(which resync the environment against the lockfile and revert torch to the CPU-only
+pinned build, potentially clobbering fiftyone/fiftyone-brain/pycocotools too):
+
+    .\\tests\\run_fiftyone_app.ps1
+
+or, equivalently:
 
     .venv\\Scripts\\python.exe tests\\fiftyone_embeddings_app.py
 """
@@ -43,23 +48,56 @@ BATCH_SIZE = 4
 # `None` to process the full split once you're happy with the results.
 MAX_SAMPLES_PER_SPLIT: int | None = None
 IOU_THRESHOLD = 0.5
+# If True, deletes any existing FiftyOne dataset with `FIFTYONE_DATASET_NAME` and rebuilds
+# it from scratch: reloads the COCO splits, reruns RF-DETR inference (including decoder
+# embeddings), re-evaluates against ground truth, and recomputes the embedding
+# visualization. Set back to False for subsequent runs to reuse the cached dataset.
+OVERRIDE: bool = False
 # -----------------------------------------------------------------------------------
 
 
 def build_dataset() -> fo.Dataset:
     """Builds (or loads a cached) FiftyOne dataset from the COCO splits, tagged by split.
 
+    If `OVERRIDE` is True, any existing dataset named `FIFTYONE_DATASET_NAME` is deleted
+    first so the splits, predictions, and embeddings are all regenerated from scratch.
+
     Returns:
         A persistent `fo.Dataset` containing samples from every split in `SPLITS`, each
         tagged with its split name and carrying ground truth detections in the
         `ground_truth` field.
     """
-    if fo.dataset_exists(FIFTYONE_DATASET_NAME):
-        existing = fo.load_dataset(FIFTYONE_DATASET_NAME)
-        if len(existing) > 0:
-            return existing
-        # A previous run failed partway through building the dataset; start over.
-        fo.delete_dataset(FIFTYONE_DATASET_NAME)
+    try:
+        if OVERRIDE and fo.dataset_exists(FIFTYONE_DATASET_NAME):
+            logger.info(
+                "OVERRIDE=True: deleting existing dataset '%s'...", FIFTYONE_DATASET_NAME
+            )
+            fo.delete_dataset(FIFTYONE_DATASET_NAME)
+
+        if fo.dataset_exists(FIFTYONE_DATASET_NAME):
+            existing = fo.load_dataset(FIFTYONE_DATASET_NAME)
+            if len(existing) > 0:
+                return existing
+            # A previous run failed partway through building the dataset; start over.
+            fo.delete_dataset(FIFTYONE_DATASET_NAME)
+    except OSError as e:
+        if "downgrading" not in str(e).lower() and "migrate" not in str(e).lower():
+            raise
+        raise RuntimeError(
+            "FiftyOne's local database is stuck at a newer schema version than the "
+            f"currently installed fiftyone=={fo.__version__} can read (original error: "
+            f"{e}). This happens if the database was migrated up by a newer fiftyone "
+            "version and then the package was downgraded without following the "
+            "official downgrade procedure. Fix it with these 3 steps:\n\n"
+            "  1. uv pip install fiftyone==1.20.0 fiftyone-brain>=0.23.0\n"
+            "  2. .venv\\Scripts\\python.exe -c \"import fiftyone.migrations as fom; "
+            "fom.migrate_database_if_necessary(destination='1.19.0')\"\n"
+            "  3. uv pip install fiftyone==1.19.0 \"fiftyone-brain>=0.22.0,<0.23\" pycocotools\n\n"
+            "IMPORTANT: run step 3 immediately after step 2, without running any other "
+            "fiftyone command in between - fiftyone auto-upgrades the database schema "
+            "back up to whatever version is currently installed as soon as it connects, "
+            "so any fiftyone 1.20.0 command run between steps 2 and 3 undoes step 2."
+        ) from e
 
     dataset = fo.Dataset(FIFTYONE_DATASET_NAME, persistent=True)
     for split in SPLITS:
@@ -207,8 +245,43 @@ def save_views(dataset: fo.Dataset) -> None:
         )
 
 
+def _check_cuda() -> None:
+    """Verifies CUDA torch is active, aborting immediately if it is not.
+
+    ``uv run``/``uv sync`` re-resolve this project's lockfile-pinned CPU-only
+    torch build, silently reverting any manually installed CUDA build. This
+    check aborts *before* touching the dataset (e.g. before an `OVERRIDE`
+    delete) so an accidental ``uv run`` invocation can't waste time or wipe
+    out the cached dataset while running on the CPU-only build.
+
+    Raises:
+        RuntimeError: if `torch.cuda.is_available()` is False.
+    """
+    import torch
+
+    if torch.cuda.is_available():
+        logger.info(
+            "CUDA is available - using GPU '%s' for inference.",
+            torch.cuda.get_device_name(0),
+        )
+        return
+
+    raise RuntimeError(
+        f"CUDA is NOT available (torch {torch.__version__}) - aborting before touching "
+        "the dataset. This almost always means the project's CPU-only torch build got "
+        "silently re-installed by 'uv run'/'uv sync' (which resync against the "
+        "lockfile-pinned CPU-only torch). Fix it with:\n\n"
+        "  uv pip install torch torchvision --extra-index-url "
+        "https://download.pytorch.org/whl/cu126 --reinstall\n\n"
+        "Then always launch this script via tests\\run_fiftyone_app.ps1 (or "
+        ".venv\\Scripts\\python.exe directly) - never 'uv run', since that resyncs the "
+        "environment and reverts torch to CPU-only again."
+    )
+
+
 def main() -> None:
     """Builds the dataset, runs inference/evaluation if needed, and launches the App."""
+    _check_cuda()
     dataset = build_dataset()
 
     if "predictions" not in dataset.get_field_schema():
