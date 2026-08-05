@@ -40,7 +40,7 @@ from rfdetr.variants import RFDETRLarge
 logger = get_logger()
 
 # --- Configuration -----------------------------------------------------------------
-DATASET_ROOT = r"C:\Users\u.etxeberria\Downloads\lat_dataset\training_dataset"
+DATASET_ROOT = r"C:\Users\u.etxeberria\Desktop\datasets\lat_dataset"
 CHECKPOINT = r"C:\Users\u.etxeberria\Downloads\lat1_large.pth"
 FIFTYONE_DATASET_NAME = "rfdetr-lat-embeddings"
 SPLITS = ("train", "valid", "test")
