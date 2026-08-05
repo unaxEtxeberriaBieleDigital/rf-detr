@@ -11,10 +11,13 @@ from typing import Literal
 import numpy as np
 from sklearn.decomposition import PCA
 
+from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import BaseDataset, Split
 from visualizer.backend.embeddingrecord import EmbeddingRecord
 from visualizer.backend.evaluator import match_detections
 from visualizer.backend.models.basemodel import BaseModel
+
+logger = get_logger()
 
 JobStatus = Literal["pending", "running", "done", "error"]
 
@@ -27,6 +30,9 @@ class Job:
     status: JobStatus = "pending"
     error: str | None = None
     records: list[EmbeddingRecord] = field(default_factory=list)
+    categories: dict[int, str] = field(default_factory=dict)
+    num_images_total: int = 0
+    num_images_processed: int = 0
 
 
 # Simple in-memory job store. Fine for a single-process dev server; swap for a persistent
@@ -58,12 +64,22 @@ def run_job(
         pca_components: Target dimensionality for the PCA projection of the embeddings.
     """
     job.status = "running"
+    logger.info(
+        f"[job {job.id}] starting: splits={[s.name for s in splits]}, batch_size={batch_size}, "
+        f"iou_threshold={iou_threshold}, pca_components={pca_components}"
+    )
     try:
+        # Count images up front (cheap directory listing) so progress can be reported as a
+        # fraction of the total instead of just a running count.
+        job.num_images_total = sum(len(list(dataset.iter_split(split))) for split in splits)
+        logger.info(f"[job {job.id}] found {job.num_images_total} image(s) across {len(splits)} split(s)")
+
         records: list[EmbeddingRecord] = []
         raw_embeddings: list[list[float]] = []
         embedded_record_indices: list[int] = []
 
         for split in splits:
+            logger.info(f"[job {job.id}] processing split '{split.name}'")
             for batch in dataset.iter_batches(split, batch_size):
                 embeddings, predictions = model.get_batch_embeddings(batch)
 
@@ -86,14 +102,23 @@ def run_job(
                             raw_embeddings.append(match.embedding)
                         records.append(record)
 
+                job.num_images_processed += len(batch)
+                logger.info(
+                    f"[job {job.id}] {job.num_images_processed}/{job.num_images_total} image(s) processed "
+                    f"({len(records)} record(s) so far)"
+                )
+
         if raw_embeddings:
             n_components = min(pca_components, len(raw_embeddings), len(raw_embeddings[0]))
+            logger.info(f"[job {job.id}] reducing {len(raw_embeddings)} embedding(s) to {n_components}D with PCA")
             coords = PCA(n_components=n_components).fit_transform(np.array(raw_embeddings, dtype=np.float32))
             for record_idx, coord in zip(embedded_record_indices, coords.tolist()):
                 records[record_idx].embedding = coord
 
         job.records = records
         job.status = "done"
+        logger.info(f"[job {job.id}] done: {len(records)} record(s) from {job.num_images_total} image(s)")
     except Exception as e:
+        logger.error(f"[job {job.id}] failed: {e}", exc_info=True)
         job.error = str(e)
         job.status = "error"

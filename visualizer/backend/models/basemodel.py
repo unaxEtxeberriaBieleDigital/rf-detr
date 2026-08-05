@@ -26,11 +26,13 @@ class BaseModel(ABC):
             raise TypeError(f"Expected a pth file, but got the following file: {path}")
 
     @abstractmethod
-    def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[torch.Tensor, list[list[Prediction]]]:
+    def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
         """Method to extract the embeddings of a batch.
 
-            Supported dimensions: * [batch_size, hidden_dim]
-            * [batch_size, num_queries, hidden_dim]
+        Different images can have a different number of (post-threshold) detections, so
+        embeddings are returned per-image rather than as one stacked tensor: element ``i`` is
+        a ``[num_detections_i, hidden_dim]`` tensor for ``batch[i]`` (``num_detections_i`` may
+        be ``0`` when an image has no detections).
 
         Returns:
             A tuple ``(embeddings, predictions)`` where ``predictions[i][j]`` (a ``Prediction``

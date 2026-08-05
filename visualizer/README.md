@@ -74,3 +74,30 @@ Por qué esto resuelve tu objetivo
 • Modelo nuevo → solo  class Foo(BaseModel)  +  get_batch_embeddings  +  @register_model . Cero cambios en API/evaluador.
 • Dataset nuevo → solo  iter_batches  +  get_ground_truth  + declarar  task_type . Si el  task_type  ya existe, el evaluador se reutiliza tal cual.
 • Frontend solo conoce  EmbeddingRecord  — nunca depende de si detrás hay RF-DETR o un clasificador ResNet.
+
+## Ejecutar la inferencia en GPU
+
+`visualizer/backend/models/rfdetr.py` ya detecta y usa CUDA automáticamente si `torch.cuda.is_available()`
+devuelve `True`; si no, cae a CPU (y lo avisa por log). El problema típico en local no es el código, sino que
+`uv.lock` fija el wheel **CPU-only** de `torch` desde PyPI, y cualquier `uv run ...` sin `--no-sync` vuelve a
+sincronizar el entorno contra ese lockfile, reinstalando torch CPU encima de una build CUDA que hayas instalado
+a mano (verás algo como `Uninstalled 2 packages... Installed 2 packages...` justo antes de arrancar uvicorn).
+
+Pasos para tener CUDA disponible en local (Windows/Linux con GPU NVIDIA):
+
+```bash
+# 1. Sincroniza el entorno normalmente al menos una vez (instala fastapi/uvicorn/etc.)
+uv sync --extra visualizer
+
+# 2. Instala el build de torch que coincide con tu driver CUDA (auto-detectado por uv)
+uv pip install --torch-backend=auto torch torchvision --reinstall
+
+# 3. Verifica
+uv run --no-sync python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+
+# 4. A partir de aquí, arranca SIEMPRE con --no-sync para no perder la build CUDA
+uv run --no-sync --extra visualizer uvicorn visualizer.backend.app:app --reload --port 8000
+```
+
+`run_visualizer.ps1` / `run_visualizer.sh` ya usan `--no-sync` por este motivo. Si vuelves a ejecutar
+`uv sync` (por ejemplo tras un `git pull`), repite el paso 2 antes de levantar el visualizer.

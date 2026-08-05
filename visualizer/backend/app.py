@@ -26,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel as PydanticModel
 
+from rfdetr.utilities.logger import get_logger
+
 # Importing these registers the concrete implementations into MODEL_REGISTRY /
 # DATASET_REGISTRY via their `@register_model`/`@register_dataset` decorators. Adding a new
 # model or dataset type only requires adding its import here (or an equivalent plugin
@@ -35,6 +37,8 @@ from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models import rfdetr  # noqa: F401
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY
+
+logger = get_logger()
 
 app = FastAPI(title="RF-DETR Visualizer API", version="1.0.0")
 
@@ -62,6 +66,9 @@ class JobStatusResponse(PydanticModel):
     status: str
     error: str | None = None
     num_records: int = 0
+    categories: dict[int, str] = {}
+    num_images_total: int = 0
+    num_images_processed: int = 0
 
 
 @app.get("/health")
@@ -96,10 +103,16 @@ def create_job(request: JobRequest) -> JobStatusResponse:
         model = model_cls(request.model_path)
         splits = [_parse_split(name) for name in request.splits] if request.splits else list(dataset.splits.keys())
     except Exception as e:
+        logger.error(f"Could not initialize dataset/model for a new job: {e}", exc_info=True)
         raise HTTPException(400, f"Could not initialize dataset/model: {e}") from e
 
     job = Job(id=str(uuid.uuid4()))
+    job.categories = dataset.categories
     JOB_STORE[job.id] = job
+    logger.info(
+        f"Created job {job.id}: dataset_type='{request.dataset_type}' ({request.dataset_path}), "
+        f"model_type='{request.model_type}' ({request.model_path})"
+    )
 
     thread = threading.Thread(
         target=run_job,
@@ -114,7 +127,15 @@ def create_job(request: JobRequest) -> JobStatusResponse:
 @app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     job = _get_job_or_404(job_id)
-    return JobStatusResponse(id=job.id, status=job.status, error=job.error, num_records=len(job.records))
+    return JobStatusResponse(
+        id=job.id,
+        status=job.status,
+        error=job.error,
+        num_records=len(job.records),
+        categories=job.categories,
+        num_images_total=job.num_images_total,
+        num_images_processed=job.num_images_processed,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}/records")

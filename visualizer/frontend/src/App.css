@@ -114,3 +114,232 @@ button {
     background-color: #0f0f0f69;
   }
 }
+
+/* --- Setup page --- */
+
+.setup-container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 6vh 1.5rem 3rem;
+}
+
+.setup-subtitle {
+  color: #555;
+  margin-bottom: 2rem;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  text-align: left;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field span,
+.field legend {
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.field select {
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+}
+
+fieldset.field {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+.setup-status {
+  margin-top: 1rem;
+  color: #396cd8;
+}
+
+.setup-error {
+  margin-top: 1rem;
+  color: #c62828;
+  white-space: pre-wrap;
+}
+
+.progress-bar {
+  margin-top: 0.75rem;
+  height: 8px;
+  border-radius: 4px;
+  background: #e0e0e0;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #396cd8;
+  transition: width 0.3s ease;
+}
+
+/* --- Visualizer page --- */
+
+.visualizer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.visualizer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.visualizer-subtitle {
+  color: #555;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
+button.secondary {
+  background-color: transparent;
+}
+
+.visualizer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.75rem 0;
+  flex-wrap: wrap;
+}
+
+.confidence-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 260px;
+}
+
+.split-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.record-count {
+  color: #555;
+  font-size: 0.85em;
+}
+
+.visualizer-body {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.visualizer-plot {
+  flex: 1 1 45%;
+  min-width: 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.visualizer-gallery {
+  flex: 1 1 55%;
+  min-width: 0;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.image-gallery-empty {
+  color: #777;
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+.image-card {
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.image-card-selected {
+  border-color: #396cd8;
+}
+
+.image-card-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #eee;
+  overflow: hidden;
+}
+
+.image-card-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.image-card-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.image-card-caption {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.image-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-card-preds {
+  color: #555;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
