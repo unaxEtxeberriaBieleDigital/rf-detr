@@ -10,9 +10,12 @@ export interface AppConfig {
   datasetType: string;
   modelPath: string;
   modelType: string;
-  dimensions: 2 | 3;
   jobId: string;
   categories: Record<number, string>;
+  /** Whether PCA has already been computed for this job. */
+  hasPca: boolean;
+  /** Number of PCA dimensions (2 or 3), or null if PCA hasn't been computed. */
+  pcaComponents: number | null;
 }
 
 interface AppContextValue {

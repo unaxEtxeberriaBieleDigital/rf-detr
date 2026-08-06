@@ -24,6 +24,16 @@ export interface JobStatusResponse {
   categories: Record<number, string>;
   num_images_total: number;
   num_images_processed: number;
+  has_pca: boolean;
+  pca_components: number | null;
+}
+
+export interface ImagePathPageResponse {
+  image_paths: string[];
+  total_images: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
 }
 
 export interface CreateJobRequest {
@@ -34,5 +44,17 @@ export interface CreateJobRequest {
   splits?: string[] | null;
   batch_size?: number;
   iou_threshold?: number;
-  pca_components?: number;
+}
+
+export interface CheckDatasetResponse {
+  has_db: boolean;
+  num_records: number;
+  has_pca: boolean;
+  pca_components: number | null;
+  status: string | null;
+}
+
+export interface PcaStatusResponse {
+  updated: number;
+  components: number;
 }

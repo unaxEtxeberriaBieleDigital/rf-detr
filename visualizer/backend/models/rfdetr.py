@@ -46,7 +46,7 @@ class RFDETR(BaseModel):
     def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
         logger.debug(f"Running inference on a batch of {len(batch)} image(s) on device '{self.device}'")
         input_batch: list[str] = [str(path) for path in batch]
-        preds = self.model.predict(input_batch, threshold=0.5, return_query_embeddings=True)
+        preds = self.model.predict(input_batch, threshold=0.05, return_query_embeddings=True)
         batch_embeddings: list[torch.Tensor] = []
         batch_predictions: list[list[Prediction]] = []
         for pred in preds:

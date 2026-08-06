@@ -4,6 +4,12 @@ __pycache__/
 *$py.class
 .vscode
 
+# RF-DETR Visualizer: persisted embedding databases (one per dataset, written at dataset root)
+rfdetr_visualizer.db
+rfdetr_visualizer.db-wal
+rfdetr_visualizer.db-shm
+package-lock.json
+
 # C extensions
 *.so
 

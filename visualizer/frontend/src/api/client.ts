@@ -1,4 +1,11 @@
-import type { CreateJobRequest, EmbeddingRecordDTO, JobStatusResponse } from "../types";
+import type {
+  CheckDatasetResponse,
+  CreateJobRequest,
+  EmbeddingRecordDTO,
+  ImagePathPageResponse,
+  JobStatusResponse,
+  PcaStatusResponse,
+} from "../types";
 
 // The FastAPI backend is started separately (see visualizer/run_visualizer.*) and listens
 // on port 8000 by default. CORS is open on the backend, so this works from both the Vite
@@ -53,6 +60,74 @@ export function getJobRecords(jobId: string, params: GetJobRecordsParams = {}): 
   return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records?${search.toString()}`);
 }
 
+export interface GetJobImagePathsParams {
+  split?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function getJobImagePaths(jobId: string, params: GetJobImagePathsParams = {}): Promise<ImagePathPageResponse> {
+  const search = new URLSearchParams();
+  if (params.split) search.set("split", params.split);
+  search.set("limit", String(params.limit ?? 60));
+  search.set("offset", String(params.offset ?? 0));
+  return request<ImagePathPageResponse>(`/api/v1/jobs/${jobId}/image-paths?${search.toString()}`);
+}
+
+export interface RecordsByImagePathsRequest {
+  image_paths: string[];
+  split?: string;
+}
+
+export function getJobRecordsByImagePaths(
+  jobId: string,
+  payload: RecordsByImagePathsRequest,
+): Promise<EmbeddingRecordDTO[]> {
+  return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records/by-image-paths`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getRecordImageUrl(jobId: string, recordId: string): string {
   return `${API_BASE_URL}/api/v1/jobs/${jobId}/images/${encodeURIComponent(recordId)}`;
+}
+
+export function checkDataset(datasetPath: string): Promise<CheckDatasetResponse> {
+  const search = new URLSearchParams({ path: datasetPath });
+  return request<CheckDatasetResponse>(`/api/v1/check-dataset?${search.toString()}`);
+}
+
+export function loadJob(datasetPath: string): Promise<JobStatusResponse> {
+  return request<JobStatusResponse>("/api/v1/jobs/load", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_path: datasetPath }),
+  });
+}
+
+export type ReductionAlgorithm = "pca" | "tsne" | "umap";
+
+export function computeReduction(
+  jobId: string,
+  components: 2 | 3,
+  algorithm: ReductionAlgorithm,
+  recordIds?: string[],
+  params?: { perplexity?: number; n_neighbors?: number; min_dist?: number },
+): Promise<PcaStatusResponse> {
+  return request<PcaStatusResponse>(
+    `/api/v1/jobs/${jobId}/pca?components=${components}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        record_ids: recordIds ?? null,
+        algorithm,
+        perplexity: params?.perplexity ?? 30.0,
+        n_neighbors: params?.n_neighbors ?? 15,
+        min_dist: params?.min_dist ?? 0.1,
+      }),
+    },
+  );
 }

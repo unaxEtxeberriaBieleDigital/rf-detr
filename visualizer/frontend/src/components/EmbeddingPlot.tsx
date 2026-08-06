@@ -6,13 +6,33 @@ import type { EmbeddingRecordDTO } from "../types";
 
 const Plot = createPlotlyComponent(Plotly);
 
-const STATUS_COLORS: Record<string, string> = {
-  tp: "#2e7d32",
-  correct: "#2e7d32",
-  fp: "#c62828",
-  incorrect: "#c62828",
-  fn: "#f9a825",
-  misclassified: "#6a1b9a",
+const CLASS_COLORS = [
+  "#1f77b4",
+  "#ff7f0e",
+  "#2ca02c",
+  "#d62728",
+  "#9467bd",
+  "#8c564b",
+  "#e377c2",
+  "#7f7f7f",
+  "#bcbd22",
+  "#17becf",
+];
+
+// Marker symbol per prediction-quality status.
+// 2D (scattergl) supports a richer symbol vocabulary than 3D (scatter3d).
+const STATUS_SYMBOL_2D: Record<string, string> = {
+  tp: "circle",
+  fp: "x",
+  fn: "diamond",
+  misclassified: "triangle-up",
+};
+
+const STATUS_SYMBOL_3D: Record<string, string> = {
+  tp: "circle",
+  fp: "x",
+  fn: "diamond",
+  misclassified: "cross",
 };
 
 interface EmbeddingPlotProps {
@@ -20,45 +40,102 @@ interface EmbeddingPlotProps {
   dimensions: 2 | 3;
   categories: Record<number, string>;
   selectedRecordId: string | null;
+  /** Record IDs currently highlighted via lasso/box selection; null = none. */
+  clusterSelection: Set<string> | null;
   onSelectRecord: (recordId: string) => void;
+  /** Called with the new selection set after a lasso/box selection,
+   *  or null when the user clears the selection. */
+  onClusterSelectionChange: (selection: Set<string> | null) => void;
 }
 
-/** Renders the (already PCA-reduced) embeddings as an interactive 2D/3D scatter plot. */
+/** Renders the already-reduced embeddings as an interactive 2D/3D scatter plot.
+ *
+ *  Points are coloured by class and shaped by prediction-quality status
+ *  (TP = circle, FP = ×, FN = diamond, Misclassified = triangle / cross).
+ *  The lasso and box-select tools in the mode bar let the user select a
+ *  cluster; the selection is propagated via `onClusterSelectionChange` and
+ *  used by `VisualizerPage` to filter the image gallery.
+ */
 export default function EmbeddingPlot({
   records,
   dimensions,
   categories,
   selectedRecordId,
+  clusterSelection,
   onSelectRecord,
+  onClusterSelectionChange,
 }: EmbeddingPlotProps) {
+  function resolveClassId(record: EmbeddingRecordDTO): number | null {
+    if (record.ground_truth) return record.ground_truth.class_id;
+    if (record.prediction) return record.prediction.class_id;
+    return null;
+  }
+
+  function classLabel(classId: number | null): string {
+    if (classId === null) return "sin clase";
+    return categories[classId] ?? `clase ${classId}`;
+  }
+
+  const withEmbedding = useMemo(
+    () => records.filter((r) => r.embedding && r.embedding.length >= 2 && r.embedding.length <= 3),
+    [records],
+  );
+
   const traces = useMemo<Data[]>(() => {
-    const withEmbedding = records.filter((r) => r.embedding && r.embedding.length >= dimensions);
-    const byStatus = new Map<string, EmbeddingRecordDTO[]>();
+    if (withEmbedding.length === 0) return [];
+
+    const symbolMap = dimensions === 3 ? STATUS_SYMBOL_3D : STATUS_SYMBOL_2D;
+
+    // Group by class for colour; within each group, symbols encode status.
+    const byClass = new Map<string, EmbeddingRecordDTO[]>();
     for (const record of withEmbedding) {
-      const bucket = byStatus.get(record.status) ?? [];
+      const classId = resolveClassId(record);
+      const key = classId === null ? "none" : String(classId);
+      const bucket = byClass.get(key) ?? [];
       bucket.push(record);
-      byStatus.set(record.status, bucket);
+      byClass.set(key, bucket);
     }
 
-    return Array.from(byStatus.entries()).map(([status, groupRecords]) => {
+    return Array.from(byClass.entries()).map(([classKey, groupRecords], traceIndex) => {
+      const classId = classKey === "none" ? null : Number(classKey);
       const x = groupRecords.map((r) => r.embedding![0]);
       const y = groupRecords.map((r) => r.embedding![1]);
       const z = dimensions === 3 ? groupRecords.map((r) => r.embedding![2]) : undefined;
+
       const text = groupRecords.map((r) => {
-        const classId = (r.prediction ?? r.ground_truth)?.class_id;
-        const className = classId !== undefined ? (categories[classId] ?? `clase ${classId}`) : "?";
-        return `${status} · ${className}`;
+        const gtClass =
+          r.ground_truth?.class_id !== undefined
+            ? (categories[r.ground_truth.class_id] ?? `clase ${r.ground_truth.class_id}`)
+            : "-";
+        const predClass =
+          r.prediction?.class_id !== undefined
+            ? (categories[r.prediction.class_id] ?? `clase ${r.prediction.class_id}`)
+            : "-";
+        return `${classLabel(resolveClassId(r))} · ${r.status} · gt: ${gtClass} · pred: ${predClass}`;
       });
+
+      // Dimmed (greyed out) when a cluster selection is active and this point
+      // is not in it — gives visual feedback similar to FiftyOne.
+      const baseColor = CLASS_COLORS[traceIndex % CLASS_COLORS.length];
+      const colors = clusterSelection
+        ? groupRecords.map((r) => (clusterSelection.has(r.id) ? baseColor : "rgba(180,180,180,0.25)"))
+        : baseColor;
+
       const sizes = groupRecords.map((r) => (r.id === selectedRecordId ? 14 : 7));
+      const symbols = groupRecords.map((r) => symbolMap[r.status] ?? "circle");
 
       const marker = {
         size: sizes,
-        color: STATUS_COLORS[status] ?? "#1565c0",
-        line: groupRecords.map((r) => (r.id === selectedRecordId ? { width: 2, color: "#000" } : { width: 0 })),
+        color: colors,
+        symbol: symbols,
+        line: {
+          width: groupRecords.map((r) => (r.id === selectedRecordId ? 2 : 0)),
+          color: "#000",
+        },
       };
 
       const base = {
-        name: status,
+        name: classLabel(classId),
         text,
         customdata: groupRecords.map((r) => r.id),
         hovertemplate: "%{text}<extra></extra>",
@@ -69,25 +146,65 @@ export default function EmbeddingPlot({
         ? ({ ...base, type: "scatter3d", mode: "markers", x, y, z } as Data)
         : ({ ...base, type: "scattergl", mode: "markers", x, y } as Data);
     });
-  }, [records, dimensions, categories, selectedRecordId]);
+  }, [withEmbedding, dimensions, categories, selectedRecordId, clusterSelection]);
+
+  if (withEmbedding.length === 0) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          color: "#888",
+          fontSize: "0.9rem",
+          textAlign: "center",
+          padding: "1rem",
+        }}
+      >
+        Usa el panel <strong>&nbsp;Calcular&nbsp;</strong> para visualizar los embeddings en el scatter plot.
+      </div>
+    );
+  }
 
   return (
+    // key forces a full remount when switching between 2D and 3D because the trace
+    // type changes (scattergl ↔ scatter3d) and Plotly cannot morph between them in-place.
     <Plot
+      key={`plot-${dimensions}`}
       data={traces}
       layout={{
         autosize: true,
         margin: { l: 30, r: 10, t: 10, b: 30 },
         legend: { orientation: "h" },
-        uirevision: "embeddings",
+        uirevision: `dims-${dimensions}`,
+        // Default to pan so users can explore; lasso/select available in mode bar.
+        dragmode: "pan",
       }}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
-      config={{ displaylogo: false, responsive: true }}
+      config={{
+        displaylogo: false,
+        responsive: true,
+        // Show lasso and box-select tools in the mode bar.
+        modeBarButtonsToAdd: ["lasso2d", "select2d"] as unknown as Plotly.ModeBarDefaultButtons[],
+      }}
       onClick={(event) => {
         const point = event.points?.[0];
         const recordId = (point as unknown as { customdata?: string })?.customdata;
         if (recordId) onSelectRecord(recordId);
       }}
+      onSelected={(event) => {
+        if (!event || event.points.length === 0) {
+          onClusterSelectionChange(null);
+          return;
+        }
+        const ids = event.points.map(
+          (p: unknown) => ((p as { customdata?: string }).customdata) ?? "",
+        ).filter(Boolean);
+        onClusterSelectionChange(new Set(ids));
+      }}
+      onDeselect={() => onClusterSelectionChange(null)}
     />
   );
 }

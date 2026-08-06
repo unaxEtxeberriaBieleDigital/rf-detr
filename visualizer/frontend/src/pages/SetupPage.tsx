@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { createJob, getDatasetTypes, getJob, getModelTypes } from "../api/client";
+import { open } from "@tauri-apps/plugin-dialog";
+import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJob } from "../api/client";
 import { useAppConfig } from "../context/AppContext";
+import type { CheckDatasetResponse } from "../types";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -17,7 +19,12 @@ export default function SetupPage() {
   const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [datasetType, setDatasetType] = useState("");
   const [modelType, setModelType] = useState("");
-  const [dimensions, setDimensions] = useState<2 | 3>(2);
+
+  // DB detection state
+  const [dbCheck, setDbCheck] = useState<CheckDatasetResponse | null>(null);
+  const [dbCheckLoading, setDbCheckLoading] = useState(false);
+  // "none" = user hasn't chosen yet | "load" = load existing | "recalculate" = re-run inference
+  const [dbChoice, setDbChoice] = useState<"none" | "load" | "recalculate">("none");
 
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -40,12 +47,69 @@ export default function SetupPage() {
       .catch((e) => setErrorMessage(`No se pudo conectar con el backend: ${String(e)}`));
   }, []);
 
+  // Check for an existing DB whenever datasetPath changes (debounced via blur / explicit set).
+  async function handleDatasetPathCommit(path: string): Promise<void> {
+    if (!path.trim()) {
+      setDbCheck(null);
+      setDbChoice("none");
+      return;
+    }
+    setDbCheckLoading(true);
+    setDbCheck(null);
+    setDbChoice("none");
+    try {
+      const result = await checkDataset(path.trim());
+      setDbCheck(result);
+      // Auto-select "load" if the DB looks healthy; user can override.
+      if (result.has_db && result.status === "done") {
+        setDbChoice("load");
+      } else {
+        setDbChoice("recalculate");
+      }
+    } catch {
+      // If backend is not reachable yet, silently ignore.
+    } finally {
+      setDbCheckLoading(false);
+    }
+  }
+
   const canSubmit =
     datasetPath.trim().length > 0 &&
-    modelPath.trim().length > 0 &&
+    (dbChoice === "load" || modelPath.trim().length > 0) &&
     datasetType.length > 0 &&
     modelType.length > 0 &&
     !submitting;
+
+  async function pickDatasetDirectory(): Promise<void> {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Selecciona la carpeta del dataset",
+      });
+      if (typeof selected === "string" && selected.trim().length > 0) {
+        setDatasetPath(selected);
+        await handleDatasetPathCommit(selected);
+      }
+    } catch (e) {
+      setErrorMessage(`No se pudo abrir el selector de carpetas: ${String(e instanceof Error ? e.message : e)}`);
+    }
+  }
+
+  async function pickModelFile(): Promise<void> {
+    try {
+      const selected = await open({
+        directory: false,
+        multiple: false,
+        title: "Selecciona el archivo de modelo",
+      });
+      if (typeof selected === "string" && selected.trim().length > 0) {
+        setModelPath(selected);
+      }
+    } catch (e) {
+      setErrorMessage(`No se pudo abrir el selector de archivo: ${String(e instanceof Error ? e.message : e)}`);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,16 +117,36 @@ export default function SetupPage() {
 
     setSubmitting(true);
     setErrorMessage(null);
-    setStatusMessage("Creando trabajo de inferencia...");
     setProgressFraction(null);
 
     try {
+      // --- Load existing DB (skip inference) ---
+      if (dbChoice === "load") {
+        setStatusMessage("Cargando embeddings existentes...");
+        const loaded = await loadJob(datasetPath.trim());
+        if (loaded.status === "error") {
+          throw new Error(loaded.error ?? "Error al cargar la base de datos");
+        }
+        setConfig({
+          datasetPath: datasetPath.trim(),
+          datasetType,
+          modelPath: modelPath.trim(),
+          modelType,
+          jobId: loaded.id,
+          categories: loaded.categories,
+          hasPca: loaded.has_pca,
+          pcaComponents: loaded.pca_components,
+        });
+        return;
+      }
+
+      // --- Create new inference job ---
+      setStatusMessage("Creando trabajo de inferencia...");
       const job = await createJob({
         dataset_path: datasetPath.trim(),
         dataset_type: datasetType,
         model_path: modelPath.trim(),
         model_type: modelType,
-        pca_components: dimensions,
       });
 
       let latest = job;
@@ -93,9 +177,10 @@ export default function SetupPage() {
         datasetType,
         modelPath: modelPath.trim(),
         modelType,
-        dimensions,
         jobId: latest.id,
         categories: latest.categories,
+        hasPca: false,
+        pcaComponents: null,
       });
     } catch (e) {
       setErrorMessage(String(e instanceof Error ? e.message : e));
@@ -104,6 +189,8 @@ export default function SetupPage() {
       setProgressFraction(null);
     }
   }
+
+  const showModelFields = dbChoice !== "load";
 
   return (
     <main className="setup-container">
@@ -116,14 +203,58 @@ export default function SetupPage() {
       <form className="setup-form" onSubmit={handleSubmit}>
         <label className="field">
           <span>Ruta del dataset</span>
-          <input
-            type="text"
-            placeholder="C:\datasets\mi-dataset"
-            value={datasetPath}
-            onChange={(e) => setDatasetPath(e.currentTarget.value)}
-            disabled={submitting}
-          />
+          <div className="path-field">
+            <input
+              type="text"
+              placeholder="C:\datasets\mi-dataset"
+              value={datasetPath}
+              onChange={(e) => setDatasetPath(e.currentTarget.value)}
+              onBlur={(e) => handleDatasetPathCommit(e.currentTarget.value)}
+              disabled={submitting}
+            />
+            <button type="button" onClick={pickDatasetDirectory} disabled={submitting}>
+              Seleccionar carpeta
+            </button>
+          </div>
         </label>
+
+        {/* DB detection banner */}
+        {dbCheckLoading && (
+          <p className="setup-db-checking">Comprobando base de datos existente...</p>
+        )}
+        {dbCheck?.has_db && !dbCheckLoading && (
+          <div className="setup-db-banner">
+            <p className="setup-db-found">
+              <strong>Base de datos existente encontrada</strong>
+              {" — "}
+              {dbCheck.num_records.toLocaleString()} registros
+              {dbCheck.has_pca && dbCheck.pca_components
+                ? `, PCA ${dbCheck.pca_components}D calculado`
+                : ", sin PCA calculado"}
+              {dbCheck.status === "error" && (
+                <span className="setup-db-warn"> (la inferencia anterior fue interrumpida)</span>
+              )}
+            </p>
+            <div className="setup-db-actions">
+              <button
+                type="button"
+                className={`setup-db-btn ${dbChoice === "load" ? "setup-db-btn-active" : ""}`}
+                onClick={() => setDbChoice("load")}
+                disabled={submitting || dbCheck.status === "error"}
+              >
+                Cargar existente
+              </button>
+              <button
+                type="button"
+                className={`setup-db-btn ${dbChoice === "recalculate" ? "setup-db-btn-active" : ""}`}
+                onClick={() => setDbChoice("recalculate")}
+                disabled={submitting}
+              >
+                Recalcular (sobreescribir)
+              </button>
+            </div>
+          </div>
+        )}
 
         <label className="field">
           <span>Tipo de dataset</span>
@@ -137,53 +268,44 @@ export default function SetupPage() {
           </select>
         </label>
 
-        <label className="field">
-          <span>Ruta del modelo</span>
-          <input
-            type="text"
-            placeholder="C:\modelos\checkpoint.pth"
-            value={modelPath}
-            onChange={(e) => setModelPath(e.currentTarget.value)}
-            disabled={submitting}
-          />
-        </label>
+        {showModelFields && (
+          <>
+            <label className="field">
+              <span>Ruta del modelo</span>
+              <div className="path-field">
+                <input
+                  type="text"
+                  placeholder="C:\modelos\checkpoint.pth"
+                  value={modelPath}
+                  onChange={(e) => setModelPath(e.currentTarget.value)}
+                  disabled={submitting}
+                />
+                <button type="button" onClick={pickModelFile} disabled={submitting}>
+                  Seleccionar archivo
+                </button>
+              </div>
+            </label>
 
-        <label className="field">
-          <span>Tipo de modelo</span>
-          <select value={modelType} onChange={(e) => setModelType(e.currentTarget.value)} disabled={submitting}>
-            {modelTypes.length === 0 && <option value="">Cargando...</option>}
-            {modelTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <fieldset className="field" disabled={submitting}>
-          <legend>Visualización de embeddings</legend>
-          <label className="radio">
-            <input
-              type="radio"
-              name="dimensions"
-              checked={dimensions === 2}
-              onChange={() => setDimensions(2)}
-            />
-            2D
-          </label>
-          <label className="radio">
-            <input
-              type="radio"
-              name="dimensions"
-              checked={dimensions === 3}
-              onChange={() => setDimensions(3)}
-            />
-            3D
-          </label>
-        </fieldset>
+            <label className="field">
+              <span>Tipo de modelo</span>
+              <select
+                value={modelType}
+                onChange={(e) => setModelType(e.currentTarget.value)}
+                disabled={submitting}
+              >
+                {modelTypes.length === 0 && <option value="">Cargando...</option>}
+                {modelTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
 
         <button type="submit" disabled={!canSubmit}>
-          {submitting ? "Procesando..." : "Visualizar"}
+          {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : "Visualizar"}
         </button>
       </form>
 
