@@ -71,10 +71,6 @@ class BaseDataset(ABC):
         if batch:
             yield batch
 
-    @abstractmethod
-    def get_ground_truth(self, image_path: Path) -> list[Prediction]:
-        pass
-
     def _dataset_path_sanity_checks(self, path: Path):
         if not path.exists():
             raise ModuleNotFoundError(f"Could not find dataset at path: {path}")

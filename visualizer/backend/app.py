@@ -36,6 +36,7 @@ from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models import rfdetr  # noqa: F401
+from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.store import DB_FILENAME, JobStore
@@ -119,9 +120,7 @@ class SemanticSearchRequest(PydanticModel):
 
 class SemanticSearchResultDTO(PydanticModel):
     image_path: str
-    bbox: tuple[float, float, float, float] | None
-    confidence: float
-    class_id: int
+    prediction: Prediction
     distance: float
 
 
@@ -628,9 +627,11 @@ def _search_job_to_response(
         results = [
             SemanticSearchResultDTO(
                 image_path=r.image_path,
-                bbox=r.bbox,
-                confidence=r.confidence,
-                class_id=r.class_id,
+                prediction=Prediction(
+                    bbox=r.prediction.bbox,
+                    confidence=r.prediction.confidence,
+                    class_id=r.prediction.class_id,
+                ),
                 distance=r.distance,
             )
             for r in search_job.results

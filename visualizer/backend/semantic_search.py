@@ -48,11 +48,9 @@ _BATCH_SIZE = 8
 @dataclass
 class SearchResult:
     """One nearest-neighbour hit: a single detection in some image under the search folder."""
-
+    
     image_path: str
-    bbox: tuple[float, float, float, float] | None
-    confidence: float
-    class_id: int
+    prediction: Prediction
     distance: float
 
 
@@ -135,11 +133,14 @@ def run_semantic_search(
                 vec = np.asarray(embedding, dtype=np.float32)
                 distance = _cosine_distance(query_vec, query_norm, vec)
                 if best_result is None or distance < best_result.distance:
-                    best_result = SearchResult(
-                        image_path=str(image_path),
+                    prediction = Prediction(
                         bbox=pred.bbox,
                         confidence=pred.confidence,
                         class_id=pred.class_id,
+                    )
+                    best_result = SearchResult(
+                        image_path=str(image_path),
+                        prediction=prediction,
                         distance=distance,
                     )
             if best_result is None:
