@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getRecordImageUrl } from "../api/client";
+import { open } from "@tauri-apps/plugin-dialog";
+import { getRecordImageUrl, startSemanticSearch } from "../api/client";
 import type { EmbeddingRecordDTO } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
+import PanZoomViewport, { type PanZoomHandle } from "./PanZoomViewport";
 
 interface ImageViewerModalProps {
   isOpen: boolean;
@@ -12,8 +14,23 @@ interface ImageViewerModalProps {
   minConfidence: number;
   /** Class id → human readable name, used to label GTs and defects in the side panel. */
   categories: Record<number, string>;
+  /** Model info, forwarded to the "search similar" feature so it can re-run the model. */
+  modelPath: string;
+  modelType: string;
+  /** Overrides the image URL instead of resolving it from `jobId`/records. Used when opening
+   *  images that don't belong to this job's dataset (e.g. semantic-search neighbour results). */
+  imageUrlOverride?: string;
+  /** Whether predictions can be used to start a new "search similar" job. Disabled for images
+   *  that aren't tracked in this job's store (e.g. neighbour results), since there's no
+   *  record id to fetch a raw embedding for. */
+  allowSearch?: boolean;
+  /** Called right after a semantic search job is successfully created, so the caller can show
+   *  its progress/results (e.g. in a panel next to the embedding plot). */
+  onSearchStarted?: (searchId: string) => void;
   onClose: () => void;
 }
+
+const DEFAULT_SEARCH_K = 20;
 
 const GT_COLOR = "#1565c0";
 
@@ -43,23 +60,17 @@ export default function ImageViewerModal({
   records,
   minConfidence,
   categories,
+  modelPath,
+  modelType,
+  imageUrlOverride,
+  allowSearch = true,
+  onSearchStarted,
   onClose,
 }: ImageViewerModalProps) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef({
-    active: false,
-    pointerId: -1,
-    startX: 0,
-    startY: 0,
-    originX: 0,
-    originY: 0,
-  });
+  const panZoomRef = useRef<PanZoomHandle | null>(null);
 
   const [showGroundTruths, setShowGroundTruths] = useState(true);
   const [showPredictions, setShowPredictions] = useState(true);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
 
   // Internal side-panel filter: by default it mirrors the gallery's global confidence filter,
   // but it can be decoupled to explore this single image at a different threshold.
@@ -67,10 +78,60 @@ export default function ImageViewerModal({
   const [localMinConfidence, setLocalMinConfidence] = useState(minConfidence);
   const effectiveMinConfidence = useGlobalFilters ? minConfidence : localMinConfidence;
 
+  // "Search similar" panel: opened by clicking a prediction in the defects list. Searches for
+  // embeddings close to that single detection's embedding, over an arbitrary folder. Progress
+  // and results are shown by the caller (next to the embedding plot), not in this modal.
+  const [searchRecordId, setSearchRecordId] = useState<string | null>(null);
+  const [searchFolder, setSearchFolder] = useState("");
+  const [searchK, setSearchK] = useState(DEFAULT_SEARCH_K);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const searchRecord = useMemo(
+    () => records.find((r) => r.id === searchRecordId) ?? null,
+    [records, searchRecordId],
+  );
+
+  async function handleStartSearch(): Promise<void> {
+    if (!searchRecordId || !searchFolder.trim() || starting) return;
+    setStarting(true);
+    setStartError(null);
+    try {
+      const created = await startSemanticSearch(jobId, {
+        query_record_id: searchRecordId,
+        search_path: searchFolder.trim(),
+        k: searchK,
+        model_path: modelPath,
+        model_type: modelType,
+      });
+      onSearchStarted?.(created.id);
+      onClose();
+    } catch (e) {
+      setStartError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  async function pickSearchFolder(): Promise<void> {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Selecciona la carpeta donde buscar",
+      });
+      if (typeof selected === "string" && selected.trim().length > 0) {
+        setSearchFolder(selected);
+      }
+    } catch (e) {
+      setStartError(`No se pudo abrir el selector de carpetas: ${String(e instanceof Error ? e.message : e)}`);
+    }
+  }
+
   const anyRecordId = records[0]?.id;
   const imageUrl = useMemo(
-    () => (anyRecordId ? getRecordImageUrl(jobId, anyRecordId) : null),
-    [jobId, anyRecordId],
+    () => imageUrlOverride ?? (anyRecordId ? getRecordImageUrl(jobId, anyRecordId) : null),
+    [imageUrlOverride, jobId, anyRecordId],
   );
   const fileName = imagePath?.split(/[\\/]/).pop() ?? "";
   const split = records[0]?.split ?? "";
@@ -88,12 +149,14 @@ export default function ImageViewerModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setScale(1);
-    setOffset({ x: 0, y: 0 });
     setShowGroundTruths(true);
     setShowPredictions(true);
     setUseGlobalFilters(true);
     setLocalMinConfidence(minConfidence);
+    setSearchRecordId(null);
+    setSearchFolder("");
+    setSearchK(DEFAULT_SEARCH_K);
+    setStartError(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, imagePath]);
 
@@ -107,10 +170,6 @@ export default function ImageViewerModal({
   }, [isOpen, onClose]);
 
   if (!isOpen || !imagePath || !imageUrl) return null;
-
-  function clampScale(value: number): number {
-    return Math.min(8, Math.max(1, value));
-  }
 
   return (
     <div className="image-viewer-backdrop" onClick={onClose}>
@@ -147,10 +206,7 @@ export default function ImageViewerModal({
           <button
             type="button"
             className="image-viewer-btn"
-            onClick={() => {
-              setScale(1);
-              setOffset({ x: 0, y: 0 });
-            }}
+            onClick={() => panZoomRef.current?.reset()}
           >
             Reset
           </button>
@@ -160,69 +216,7 @@ export default function ImageViewerModal({
         </div>
 
         <div className="image-viewer-body">
-        <div
-          ref={viewportRef}
-          className={`image-viewer-viewport ${isDragging ? "dragging" : ""}`}
-          onWheel={(event) => {
-            event.preventDefault();
-            const viewport = viewportRef.current;
-            if (!viewport) return;
-
-            const rect = viewport.getBoundingClientRect();
-            const pointerX = event.clientX - rect.left;
-            const pointerY = event.clientY - rect.top;
-            const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
-            const nextScale = clampScale(scale * zoomFactor);
-            if (nextScale === scale) return;
-
-            const worldX = (pointerX - offset.x) / scale;
-            const worldY = (pointerY - offset.y) / scale;
-            setOffset({
-              x: pointerX - worldX * nextScale,
-              y: pointerY - worldY * nextScale,
-            });
-            setScale(nextScale);
-          }}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            const target = event.currentTarget;
-            dragRef.current = {
-              active: true,
-              pointerId: event.pointerId,
-              startX: event.clientX,
-              startY: event.clientY,
-              originX: offset.x,
-              originY: offset.y,
-            };
-            target.setPointerCapture(event.pointerId);
-            setIsDragging(true);
-          }}
-          onPointerMove={(event) => {
-            if (!dragRef.current.active) return;
-            const deltaX = event.clientX - dragRef.current.startX;
-            const deltaY = event.clientY - dragRef.current.startY;
-            setOffset({
-              x: dragRef.current.originX + deltaX,
-              y: dragRef.current.originY + deltaY,
-            });
-          }}
-          onPointerUp={(event) => {
-            if (dragRef.current.active && event.currentTarget.hasPointerCapture(dragRef.current.pointerId)) {
-              event.currentTarget.releasePointerCapture(dragRef.current.pointerId);
-            }
-            dragRef.current.active = false;
-            setIsDragging(false);
-          }}
-          onPointerLeave={() => {
-            if (!dragRef.current.active) return;
-            dragRef.current.active = false;
-            setIsDragging(false);
-          }}
-        >
-          <div
-            className="image-viewer-stage"
-            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
-          >
+          <PanZoomViewport ref={panZoomRef} resetKey={imagePath}>
             <ImageWithBoxes
               imageUrl={imageUrl}
               imagePath={imagePath}
@@ -231,8 +225,7 @@ export default function ImageViewerModal({
               showGroundTruths={showGroundTruths}
               showPredictions={showPredictions}
             />
-          </div>
-        </div>
+          </PanZoomViewport>
 
         <aside className="iv-sidebar">
           <div className="iv-sidebar-section">
@@ -290,21 +283,91 @@ export default function ImageViewerModal({
                 const classId = r.prediction?.class_id;
                 const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
                 const color = STATUS_COLORS[r.status] ?? "#ef6c00";
+                const selected = r.id === searchRecordId;
+                if (!allowSearch) {
+                  return (
+                    <li key={`pred-${r.id}`} className="iv-list-item">
+                      <span className="iv-dot" style={{ background: color }} />
+                      <span className="iv-list-label" title={label}>
+                        {label}
+                      </span>
+                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                      <span className="iv-status-badge" style={{ color }}>
+                        {STATUS_LABELS[r.status] ?? r.status}
+                      </span>
+                    </li>
+                  );
+                }
                 return (
-                  <li key={`pred-${r.id}`} className="iv-list-item">
-                    <span className="iv-dot" style={{ background: color }} />
-                    <span className="iv-list-label" title={label}>
-                      {label}
-                    </span>
-                    <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
-                    <span className="iv-status-badge" style={{ color }}>
-                      {STATUS_LABELS[r.status] ?? r.status}
-                    </span>
+                  <li key={`pred-${r.id}`}>
+                    <button
+                      type="button"
+                      className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
+                      title="Buscar detecciones similares a esta"
+                      onClick={() =>
+                        setSearchRecordId((current) => (current === r.id ? null : r.id))
+                      }
+                    >
+                      <span className="iv-dot" style={{ background: color }} />
+                      <span className="iv-list-label" title={label}>
+                        {label}
+                      </span>
+                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                      <span className="iv-status-badge" style={{ color }}>
+                        {STATUS_LABELS[r.status] ?? r.status}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
             </ul>
           </div>
+
+          {allowSearch && searchRecord && (
+            <div className="iv-sidebar-section ss-sidebar-section">
+              <div className="iv-sidebar-title">Buscar similares</div>
+              <p className="iv-empty">
+                Predicción:{" "}
+                {searchRecord.prediction?.class_id !== undefined
+                  ? categories[searchRecord.prediction.class_id] ?? `Clase ${searchRecord.prediction.class_id}`
+                  : "—"}{" "}
+                ({searchRecord.prediction?.confidence.toFixed(2)})
+              </p>
+              <label className="ss-field">
+                Carpeta donde buscar
+                <div className="ss-folder-row">
+                  <input
+                    type="text"
+                    placeholder="C:\ruta\a\una\carpeta"
+                    value={searchFolder}
+                    onChange={(e) => setSearchFolder(e.currentTarget.value)}
+                  />
+                  <button type="button" className="image-viewer-btn" onClick={pickSearchFolder}>
+                    Elegir...
+                  </button>
+                </div>
+              </label>
+              <label className="ss-field">
+                Nº de vecinos más cercanos (k)
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={searchK}
+                  onChange={(e) => setSearchK(Math.max(1, Number(e.currentTarget.value)))}
+                />
+              </label>
+              <button
+                type="button"
+                className="pca-btn"
+                disabled={!searchFolder.trim() || starting}
+                onClick={handleStartSearch}
+              >
+                {starting ? "Iniciando..." : "Buscar"}
+              </button>
+              {startError && <p className="setup-error">{startError}</p>}
+            </div>
+          )}
         </aside>
         </div>
       </div>

@@ -5,6 +5,7 @@ import type {
   ImagePathPageResponse,
   JobStatusResponse,
   PcaStatusResponse,
+  SemanticSearchStatusResponse,
 } from "../types";
 
 // The FastAPI backend is started separately (see visualizer/run_visualizer.*) and listens
@@ -130,4 +131,43 @@ export function computeReduction(
       }),
     },
   );
+}
+
+// -----------------------------------------------------------------------
+// Semantic search
+// -----------------------------------------------------------------------
+
+export interface StartSemanticSearchRequest {
+  query_record_id: string;
+  search_path: string;
+  k: number;
+  model_path: string;
+  model_type: string;
+}
+
+export function startSemanticSearch(
+  jobId: string,
+  payload: StartSemanticSearchRequest,
+): Promise<SemanticSearchStatusResponse> {
+  return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listSemanticSearches(jobId: string): Promise<SemanticSearchStatusResponse[]> {
+  return request<SemanticSearchStatusResponse[]>(`/api/v1/jobs/${jobId}/semantic-search`);
+}
+
+export function getSemanticSearch(jobId: string, searchId: string): Promise<SemanticSearchStatusResponse> {
+  return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
+}
+
+export function getSemanticSearchResultImageUrl(
+  jobId: string,
+  searchId: string,
+  resultIndex: number,
+): string {
+  return `${API_BASE_URL}/api/v1/jobs/${jobId}/semantic-search/${searchId}/images/${resultIndex}`;
 }

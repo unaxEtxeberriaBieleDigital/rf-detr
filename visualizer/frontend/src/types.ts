@@ -58,3 +58,25 @@ export interface PcaStatusResponse {
   updated: number;
   components: number;
 }
+
+export interface SemanticSearchResultDTO {
+  image_path: string;
+  bbox: [number, number, number, number] | null;
+  confidence: number;
+  class_id: number;
+  distance: number;
+}
+
+export interface SemanticSearchStatusResponse {
+  id: string;
+  parent_job_id: string;
+  query_record_id: string;
+  query_image_path: string;
+  search_path: string;
+  k: number;
+  status: "pending" | "running" | "done" | "error";
+  error: string | null;
+  num_images_total: number;
+  num_images_processed: number;
+  results: SemanticSearchResultDTO[] | null;
+}

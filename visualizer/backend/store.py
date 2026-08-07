@@ -648,6 +648,28 @@ class JobStore:
             ).fetchone()
         return row["image_path"] if row else None
 
+    def get_raw_embedding(self, record_id: str) -> list[float] | None:
+        """Return the full-dimensionality raw embedding for a given record id.
+
+        Unlike the ``embedding`` field in :func:`_row_to_dto` (which prefers the
+        PCA-reduced coordinates once computed), this always returns the original,
+        full-dimensionality vector used for similarity search.
+
+        Args:
+            record_id: Primary key of the record.
+
+        Returns:
+            The raw embedding as a list of floats, or None if the record doesn't
+            exist or has no stored embedding (e.g. false negatives).
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT raw_embedding FROM records WHERE id = ?", (record_id,)
+            ).fetchone()
+        if row is None or row["raw_embedding"] is None:
+            return None
+        return json.loads(row["raw_embedding"])
+
     @staticmethod
     def db_exists(dataset_path: str | Path) -> bool:
         """Return True if a DB file already exists at *dataset_path*.

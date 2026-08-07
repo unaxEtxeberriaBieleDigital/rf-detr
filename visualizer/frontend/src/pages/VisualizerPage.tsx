@@ -4,8 +4,10 @@ import EmbeddingPlot from "../components/EmbeddingPlot";
 import FilterSidebar, { applyFilters, defaultFilterState } from "../components/FilterSidebar";
 import type { FilterState } from "../components/FilterSidebar";
 import ImageGallery from "../components/ImageGallery";
+import ImageViewerModal from "../components/ImageViewerModal";
+import SemanticSearchPanel from "../components/SemanticSearchPanel";
 import { useAppConfig } from "../context/AppContext";
-import type { EmbeddingRecordDTO } from "../types";
+import type { EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
 
 export default function VisualizerPage() {
   const { config, setConfig, reset } = useAppConfig();
@@ -14,6 +16,13 @@ export default function VisualizerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+
+  // Semantic search: id of the currently-open search panel (next to the embedding plot),
+  // and the neighbour result being inspected in the full-screen viewer (if any).
+  const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
+  const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(
+    null,
+  );
 
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
 
@@ -229,11 +238,14 @@ export default function VisualizerPage() {
                   filteredRecords={filteredRecords}
                   minConfidence={filters.minConfidence}
                   categories={config.categories}
+                  modelPath={config.modelPath}
+                  modelType={config.modelType}
                   selectedImagePath={selectedImagePath}
                   onSelectImage={(imagePath) => {
                     const first = filteredRecords.find((r) => r.image_path === imagePath);
                     setSelectedRecordId(first?.id ?? null);
                   }}
+                  onSearchStarted={setActiveSearchId}
                 />
               </section>
 
@@ -248,10 +260,52 @@ export default function VisualizerPage() {
                   onClusterSelectionChange={setClusterSelection}
                 />
               </section>
+
+              {activeSearchId && (
+                <SemanticSearchPanel
+                  jobId={config.jobId}
+                  searchId={activeSearchId}
+                  categories={config.categories}
+                  onClose={() => setActiveSearchId(null)}
+                  onOpenResult={(result, imageUrl) => setOpenResult({ result, imageUrl })}
+                />
+              )}
             </div>
           </div>
         </div>
       )}
+
+      <ImageViewerModal
+        isOpen={!!openResult}
+        jobId={config.jobId}
+        imagePath={openResult?.result.image_path ?? null}
+        imageUrlOverride={openResult?.imageUrl}
+        records={
+          openResult
+            ? [
+                {
+                  id: "search-result",
+                  image_path: openResult.result.image_path,
+                  split: "",
+                  embedding: null,
+                  prediction: {
+                    class_id: openResult.result.class_id,
+                    confidence: openResult.result.confidence,
+                    bbox: openResult.result.bbox,
+                  },
+                  ground_truth: null,
+                  status: "tp",
+                },
+              ]
+            : []
+        }
+        minConfidence={0}
+        categories={config.categories}
+        modelPath={config.modelPath}
+        modelType={config.modelType}
+        allowSearch={false}
+        onClose={() => setOpenResult(null)}
+      />
     </div>
   );
 }

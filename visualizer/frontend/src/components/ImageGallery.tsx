@@ -10,11 +10,17 @@ interface ImageGalleryProps {
   minConfidence: number;
   /** Class id → human readable name, forwarded to the image viewer's side panel. */
   categories: Record<number, string>;
+  /** Model info, forwarded to the image viewer's "search similar" feature. */
+  modelPath: string;
+  modelType: string;
   /** Filtered subset of all records. Only images that have at least one record in this set
    *  are shown. Pass the full record list to show everything. */
   filteredRecords: EmbeddingRecordDTO[];
   selectedImagePath: string | null;
   onSelectImage: (imagePath: string) => void;
+  /** Called when a "search similar" job is started from the image viewer, so the caller can
+   *  show its progress/results (e.g. in a panel next to the embedding plot). */
+  onSearchStarted?: (searchId: string) => void;
 }
 
 const IMAGE_PAGE_SIZE = 60;
@@ -31,9 +37,12 @@ export default function ImageGallery({
   splitFilter,
   minConfidence,
   categories,
+  modelPath,
+  modelType,
   filteredRecords,
   selectedImagePath,
   onSelectImage,
+  onSearchStarted,
 }: ImageGalleryProps) {
   const [openImagePath, setOpenImagePath] = useState<string | null>(null);
   const [imagePaths, setImagePaths] = useState<string[]>([]);
@@ -175,6 +184,9 @@ export default function ImageGallery({
         records={openImageRecords}
         minConfidence={minConfidence}
         categories={categories}
+        modelPath={modelPath}
+        modelType={modelType}
+        onSearchStarted={onSearchStarted}
         onClose={() => setOpenImagePath(null)}
       />
     </>

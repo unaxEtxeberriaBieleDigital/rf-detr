@@ -37,6 +37,7 @@ from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models import rfdetr  # noqa: F401
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY
+from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.store import DB_FILENAME, JobStore
 
 logger = get_logger()
@@ -106,6 +107,36 @@ class CheckDatasetResponse(PydanticModel):
 class PcaStatusResponse(PydanticModel):
     updated: int
     components: int
+
+
+class SemanticSearchRequest(PydanticModel):
+    query_record_id: str
+    search_path: str
+    k: int = 20
+    model_path: str
+    model_type: str
+
+
+class SemanticSearchResultDTO(PydanticModel):
+    image_path: str
+    bbox: tuple[float, float, float, float] | None
+    confidence: float
+    class_id: int
+    distance: float
+
+
+class SemanticSearchStatusResponse(PydanticModel):
+    id: str
+    parent_job_id: str
+    query_record_id: str
+    query_image_path: str
+    search_path: str
+    k: int
+    status: str
+    error: str | None = None
+    num_images_total: int = 0
+    num_images_processed: int = 0
+    results: list[SemanticSearchResultDTO] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +492,116 @@ def get_record_image(job_id: str, record_id: str) -> FileResponse:
 
 
 # ---------------------------------------------------------------------------
+# Semantic search (nearest-neighbour over an arbitrary folder)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/jobs/{job_id}/semantic-search",
+    response_model=SemanticSearchStatusResponse,
+    status_code=202,
+)
+def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> SemanticSearchStatusResponse:
+    """Start a background nearest-neighbour search over ``request.search_path``.
+
+    The query embedding is looked up server-side from ``request.query_record_id`` (always
+    the full-dimensionality raw embedding, regardless of whether PCA has been computed),
+    so only the record id needs to travel over the wire.
+
+    Args:
+        job_id: The visualizer job that owns the query record.
+        request: Search parameters (query record, target folder, k, model to run).
+
+    Returns:
+        Initial :class:`SemanticSearchStatusResponse` with ``status="pending"``.
+    """
+    job = _get_job_or_404(job_id)
+    if request.model_type not in MODEL_REGISTRY:
+        raise HTTPException(
+            400,
+            f"Unknown model_type '{request.model_type}'. Available: {sorted(MODEL_REGISTRY)}",
+        )
+
+    query_embedding = job.store.get_raw_embedding(request.query_record_id)
+    if query_embedding is None:
+        raise HTTPException(404, f"No raw embedding found for record: {request.query_record_id}")
+
+    search_folder = Path(request.search_path)
+    if not search_folder.exists() or not search_folder.is_dir():
+        raise HTTPException(400, f"Search folder not found: {request.search_path}")
+
+    model_cls = MODEL_REGISTRY[request.model_type]
+    try:
+        model = model_cls(request.model_path)
+    except Exception as e:
+        logger.error(f"Could not initialise model for semantic search: {e}", exc_info=True)
+        raise HTTPException(400, f"Could not initialise model: {e}") from e
+
+    query_image_path = job.store.get_image_path_for_record(request.query_record_id) or ""
+    search_job = SearchJob(
+        id=str(uuid.uuid4()),
+        parent_job_id=job_id,
+        query_record_id=request.query_record_id,
+        query_image_path=query_image_path,
+        search_path=request.search_path,
+        k=request.k,
+    )
+    SEARCH_JOB_STORE[search_job.id] = search_job
+
+    logger.info(
+        f"Created semantic search {search_job.id} for job {job_id}: "
+        f"query_record_id='{request.query_record_id}', search_path='{request.search_path}', k={request.k}"
+    )
+
+    thread = threading.Thread(
+        target=run_semantic_search,
+        args=(search_job, model, query_embedding),
+        daemon=True,
+    )
+    thread.start()
+
+    return _search_job_to_response(search_job)
+
+
+@app.get(
+    "/api/v1/jobs/{job_id}/semantic-search",
+    response_model=list[SemanticSearchStatusResponse],
+)
+def list_semantic_searches(job_id: str) -> list[SemanticSearchStatusResponse]:
+    """List all semantic-search jobs started for *job_id* (most recent last).
+
+    Lets the frontend reattach to running/finished searches (e.g. after closing and
+    reopening the semantic-search panel, or after a page refresh) without losing track
+    of progress, as long as the backend process is still alive.
+    """
+    _get_job_or_404(job_id)
+    matching = [j for j in SEARCH_JOB_STORE.values() if j.parent_job_id == job_id]
+    return [_search_job_to_response(j, include_results=False) for j in matching]
+
+
+@app.get(
+    "/api/v1/jobs/{job_id}/semantic-search/{search_id}",
+    response_model=SemanticSearchStatusResponse,
+)
+def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResponse:
+    _get_job_or_404(job_id)
+    search_job = _get_search_job_or_404(search_id)
+    return _search_job_to_response(search_job, include_results=True)
+
+
+@app.get("/api/v1/jobs/{job_id}/semantic-search/{search_id}/images/{result_index}")
+def get_semantic_search_result_image(job_id: str, search_id: str, result_index: int) -> FileResponse:
+    _get_job_or_404(job_id)
+    search_job = _get_search_job_or_404(search_id)
+    if result_index < 0 or result_index >= len(search_job.results):
+        raise HTTPException(404, "Result index out of range")
+    image_path = Path(search_job.results[result_index].image_path)
+    if not image_path.exists():
+        raise HTTPException(404, f"Image file not found on disk: {image_path}")
+    return FileResponse(image_path)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -470,6 +611,43 @@ def _get_job_or_404(job_id: str) -> Job:
     if job is None:
         raise HTTPException(404, f"Job not found: {job_id}")
     return job
+
+
+def _get_search_job_or_404(search_id: str) -> SearchJob:
+    search_job = SEARCH_JOB_STORE.get(search_id)
+    if search_job is None:
+        raise HTTPException(404, f"Semantic search not found: {search_id}")
+    return search_job
+
+
+def _search_job_to_response(
+    search_job: SearchJob, include_results: bool = False
+) -> SemanticSearchStatusResponse:
+    results = None
+    if include_results and search_job.status == "done":
+        results = [
+            SemanticSearchResultDTO(
+                image_path=r.image_path,
+                bbox=r.bbox,
+                confidence=r.confidence,
+                class_id=r.class_id,
+                distance=r.distance,
+            )
+            for r in search_job.results
+        ]
+    return SemanticSearchStatusResponse(
+        id=search_job.id,
+        parent_job_id=search_job.parent_job_id,
+        query_record_id=search_job.query_record_id,
+        query_image_path=search_job.query_image_path,
+        search_path=search_job.search_path,
+        k=search_job.k,
+        status=search_job.status,
+        error=search_job.error,
+        num_images_total=search_job.num_images_total,
+        num_images_processed=search_job.num_images_processed,
+        results=results,
+    )
 
 
 def _parse_split(name: str) -> Split:
