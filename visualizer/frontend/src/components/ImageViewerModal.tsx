@@ -8,9 +8,32 @@ interface ImageViewerModalProps {
   jobId: string;
   imagePath: string | null;
   records: EmbeddingRecordDTO[];
+  /** Global confidence threshold coming from the sidebar filters. */
   minConfidence: number;
+  /** Class id → human readable name, used to label GTs and defects in the side panel. */
+  categories: Record<number, string>;
   onClose: () => void;
 }
+
+const GT_COLOR = "#1565c0";
+
+const STATUS_LABELS: Record<string, string> = {
+  tp: "TP",
+  fp: "FP",
+  fn: "FN",
+  misclassified: "Misclas.",
+  correct: "Correcto",
+  incorrect: "Incorrecto",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  tp: "#2e7d32",
+  correct: "#2e7d32",
+  fp: "#c62828",
+  incorrect: "#c62828",
+  fn: "#1565c0",
+  misclassified: "#6a1b9a",
+};
 
 /** Full-screen image viewer with wheel zoom, drag pan and GT/Prediction visibility toggles. */
 export default function ImageViewerModal({
@@ -19,6 +42,7 @@ export default function ImageViewerModal({
   imagePath,
   records,
   minConfidence,
+  categories,
   onClose,
 }: ImageViewerModalProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -37,6 +61,12 @@ export default function ImageViewerModal({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
+  // Internal side-panel filter: by default it mirrors the gallery's global confidence filter,
+  // but it can be decoupled to explore this single image at a different threshold.
+  const [useGlobalFilters, setUseGlobalFilters] = useState(true);
+  const [localMinConfidence, setLocalMinConfidence] = useState(minConfidence);
+  const effectiveMinConfidence = useGlobalFilters ? minConfidence : localMinConfidence;
+
   const anyRecordId = records[0]?.id;
   const imageUrl = useMemo(
     () => (anyRecordId ? getRecordImageUrl(jobId, anyRecordId) : null),
@@ -47,11 +77,14 @@ export default function ImageViewerModal({
 
   // The same file name can exist in several splits with different (or no) annotations, so we
   // surface the split and the actual GT/prediction counts to make the overlay state unambiguous.
-  const gtCount = useMemo(() => records.filter((r) => r.ground_truth?.bbox).length, [records]);
-  const predCount = useMemo(
-    () => records.filter((r) => r.prediction?.bbox && r.prediction.confidence >= minConfidence).length,
-    [records, minConfidence],
+  const groundTruthRecords = useMemo(() => records.filter((r) => r.ground_truth?.bbox), [records]);
+  const defectRecords = useMemo(
+    () =>
+      records.filter((r) => r.prediction?.bbox && r.prediction.confidence >= effectiveMinConfidence),
+    [records, effectiveMinConfidence],
   );
+  const gtCount = groundTruthRecords.length;
+  const predCount = defectRecords.length;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,6 +92,9 @@ export default function ImageViewerModal({
     setOffset({ x: 0, y: 0 });
     setShowGroundTruths(true);
     setShowPredictions(true);
+    setUseGlobalFilters(true);
+    setLocalMinConfidence(minConfidence);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, imagePath]);
 
   useEffect(() => {
@@ -123,6 +159,7 @@ export default function ImageViewerModal({
           </button>
         </div>
 
+        <div className="image-viewer-body">
         <div
           ref={viewportRef}
           className={`image-viewer-viewport ${isDragging ? "dragging" : ""}`}
@@ -190,11 +227,85 @@ export default function ImageViewerModal({
               imageUrl={imageUrl}
               imagePath={imagePath}
               records={records}
-              minConfidence={minConfidence}
+              minConfidence={effectiveMinConfidence}
               showGroundTruths={showGroundTruths}
               showPredictions={showPredictions}
             />
           </div>
+        </div>
+
+        <aside className="iv-sidebar">
+          <div className="iv-sidebar-section">
+            <div className="iv-sidebar-title">Filtro interno</div>
+            <label className="iv-check-row">
+              <input
+                type="checkbox"
+                checked={useGlobalFilters}
+                onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
+              />
+              Usar filtros actuales ({minConfidence.toFixed(2)})
+            </label>
+            <div className="iv-conf-row">
+              <label htmlFor="iv-local-conf" className="iv-conf-label">
+                Confianza mínima: {effectiveMinConfidence.toFixed(2)}
+              </label>
+              <input
+                id="iv-local-conf"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={effectiveMinConfidence}
+                disabled={useGlobalFilters}
+                onChange={(e) => setLocalMinConfidence(Number(e.currentTarget.value))}
+                className="iv-slider"
+              />
+            </div>
+          </div>
+
+          <div className="iv-sidebar-section">
+            <div className="iv-sidebar-title">Ground Truth ({gtCount})</div>
+            {gtCount === 0 && <p className="iv-empty">Sin anotaciones GT.</p>}
+            <ul className="iv-list">
+              {groundTruthRecords.map((r, i) => {
+                const classId = r.ground_truth?.class_id;
+                const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
+                return (
+                  <li key={`gt-${r.id}-${i}`} className="iv-list-item">
+                    <span className="iv-dot" style={{ background: GT_COLOR }} />
+                    <span className="iv-list-label" title={label}>
+                      {label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="iv-sidebar-section">
+            <div className="iv-sidebar-title">Defectos ({predCount})</div>
+            {predCount === 0 && <p className="iv-empty">Sin predicciones por encima del umbral.</p>}
+            <ul className="iv-list">
+              {defectRecords.map((r) => {
+                const classId = r.prediction?.class_id;
+                const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
+                const color = STATUS_COLORS[r.status] ?? "#ef6c00";
+                return (
+                  <li key={`pred-${r.id}`} className="iv-list-item">
+                    <span className="iv-dot" style={{ background: color }} />
+                    <span className="iv-list-label" title={label}>
+                      {label}
+                    </span>
+                    <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                    <span className="iv-status-badge" style={{ color }}>
+                      {STATUS_LABELS[r.status] ?? r.status}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </aside>
         </div>
       </div>
     </div>

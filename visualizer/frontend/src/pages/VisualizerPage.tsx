@@ -228,6 +228,7 @@ export default function VisualizerPage() {
                   splitFilter={gallerySplitFilter}
                   filteredRecords={filteredRecords}
                   minConfidence={filters.minConfidence}
+                  categories={config.categories}
                   selectedImagePath={selectedImagePath}
                   onSelectImage={(imagePath) => {
                     const first = filteredRecords.find((r) => r.image_path === imagePath);

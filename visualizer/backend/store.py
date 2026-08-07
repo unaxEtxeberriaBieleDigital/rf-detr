@@ -241,7 +241,7 @@ class JobStore:
             Number of records updated.
         """
         if algorithm == "pca":
-            return self.compute_pca(components, record_ids=record_ids)
+            return self._compute_pca(components, record_ids=record_ids)
         if algorithm == "tsne":
             return self._compute_tsne(components, record_ids=record_ids, perplexity=perplexity)
         if algorithm == "umap":
@@ -404,7 +404,7 @@ class JobStore:
     # IncrementalPCA (memory-safe, supports any dataset size)
     # ------------------------------------------------------------------
 
-    def compute_pca(self, components: int, record_ids: list[str] | None = None) -> int:
+    def _compute_pca(self, components: int, record_ids: list[str] | None = None) -> int:
         """Fit IncrementalPCA over a set of raw embeddings and persist coords.
 
         When *record_ids* is provided, only those records are used for both

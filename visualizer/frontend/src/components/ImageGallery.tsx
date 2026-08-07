@@ -8,6 +8,8 @@ interface ImageGalleryProps {
   jobId: string;
   splitFilter: string;
   minConfidence: number;
+  /** Class id → human readable name, forwarded to the image viewer's side panel. */
+  categories: Record<number, string>;
   /** Filtered subset of all records. Only images that have at least one record in this set
    *  are shown. Pass the full record list to show everything. */
   filteredRecords: EmbeddingRecordDTO[];
@@ -28,6 +30,7 @@ export default function ImageGallery({
   jobId,
   splitFilter,
   minConfidence,
+  categories,
   filteredRecords,
   selectedImagePath,
   onSelectImage,
@@ -171,6 +174,7 @@ export default function ImageGallery({
         imagePath={openImagePath}
         records={openImageRecords}
         minConfidence={minConfidence}
+        categories={categories}
         onClose={() => setOpenImagePath(null)}
       />
     </>
