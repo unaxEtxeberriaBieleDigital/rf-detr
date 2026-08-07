@@ -646,6 +646,7 @@ button.secondary {
   flex: 1 1 40%;
   min-width: 320px;
   max-width: 480px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid #ddd;
@@ -677,13 +678,35 @@ button.secondary {
   font-size: 0.8rem;
   color: #bbb;
   margin: 0.5rem 0 0;
+  flex-shrink: 0;
+}
+
+.search-panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.8rem;
+  margin: 0.4rem 0 0;
+  flex-shrink: 0;
+}
+
+.search-panel-zoom-label {
+  font-size: 0.78rem;
+  color: #bbb;
+  white-space: nowrap;
+}
+
+.search-panel-zoom-slider {
+  flex: 1;
+  min-width: 0;
 }
 
 .search-panel-results {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--ss-tile-size, 160px), 1fr));
   gap: 0.6rem;
   padding: 0.8rem;
 }
@@ -733,18 +756,14 @@ button.secondary {
 }
 
 .image-with-boxes {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  width: 100%;
 }
 
 .image-with-boxes img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   display: block;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
+  width: 100%;
+  height: auto;
 }
 
 .image-with-boxes-overlay {
@@ -752,7 +771,6 @@ button.secondary {
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
 }
 
 .image-tile-name {
@@ -1201,9 +1219,8 @@ button.secondary {
 .ss-result-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
   background: #111;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ss-result-meta {

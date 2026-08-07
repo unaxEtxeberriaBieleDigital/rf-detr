@@ -555,7 +555,7 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
 
     thread = threading.Thread(
         target=run_semantic_search,
-        args=(search_job, model, query_embedding),
+        args=(search_job, model, request.model_type, query_embedding),
         daemon=True,
     )
     thread.start()

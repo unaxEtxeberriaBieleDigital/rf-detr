@@ -13,6 +13,11 @@ detection is nearest to the query, ranked by cosine distance. Each image contrib
 most one result (its closest-matching detection), so the same image never appears twice
 among the neighbours.
 
+Per-image inference results (embeddings + predictions) are cached in a small SQLite
+database at the root of the searched folder (see ``visualizer.backend.search_cache``), so
+re-running a search against the same folder with the same model only needs to recompute
+cosine distances -- inference is skipped entirely for already-scanned images.
+
 Runs in a background thread, mirroring ``visualizer.backend.jobs``: the search keeps
 progressing even if no client is polling it, and the frontend can reattach to it (by
 ``search_id``) at any time to read the current progress or final results.
@@ -29,6 +34,8 @@ import numpy as np
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
 from visualizer.backend.models.basemodel import BaseModel
+from visualizer.backend.prediction import Prediction
+from visualizer.backend.search_cache import SearchCache
 
 logger = get_logger()
 
@@ -81,6 +88,7 @@ def iter_images_recursive(folder: Path) -> Iterator[Path]:
 def run_semantic_search(
     search_job: SearchJob,
     model: BaseModel,
+    model_type: str,
     query_embedding: list[float],
 ) -> None:
     """Run the nearest-neighbour search for *search_job* and mutate it in place.
@@ -92,6 +100,8 @@ def run_semantic_search(
         search_job: The search job whose state this call fills in.
         model: Model used to extract per-query embeddings and predictions for the
             images under ``search_job.search_path``.
+        model_type: The model type/registry key, stored in the on-disk cache purely as
+            informational metadata.
         query_embedding: The raw (full-dimensionality) embedding to search for.
     """
     search_job.status = "running"
@@ -102,6 +112,8 @@ def run_semantic_search(
         folder = Path(search_job.search_path)
         if not folder.exists() or not folder.is_dir():
             raise ValueError(f"Search folder not found: {folder}")
+
+        cache = SearchCache(folder, model_path=str(model.model_path), model_type=model_type)
 
         images = list(iter_images_recursive(folder))
         search_job.num_images_total = len(images)
@@ -116,45 +128,66 @@ def run_semantic_search(
         heap: list[tuple[float, int, SearchResult]] = []
         tie_breaker = 0
 
+        def consider_image(image_path: Path, detections: list[tuple[Prediction, list[float]]]) -> None:
+            nonlocal tie_breaker
+            best_result: SearchResult | None = None
+            for pred, embedding in detections:
+                vec = np.asarray(embedding, dtype=np.float32)
+                distance = _cosine_distance(query_vec, query_norm, vec)
+                if best_result is None or distance < best_result.distance:
+                    best_result = SearchResult(
+                        image_path=str(image_path),
+                        bbox=pred.bbox,
+                        confidence=pred.confidence,
+                        class_id=pred.class_id,
+                        distance=distance,
+                    )
+            if best_result is None:
+                return
+            tie_breaker += 1
+            if len(heap) < search_job.k:
+                heapq.heappush(heap, (-best_result.distance, tie_breaker, best_result))
+            elif -heap[0][0] > best_result.distance:
+                heapq.heapreplace(heap, (-best_result.distance, tie_breaker, best_result))
+
         processed = 0
-        for batch_start in range(0, len(images), _BATCH_SIZE):
-            batch_paths = images[batch_start : batch_start + _BATCH_SIZE]
+        num_cache_hits = 0
+        pending: list[Path] = []
+        for image_path in images:
+            image_key = str(image_path)
+            if cache.is_scanned(image_key):
+                num_cache_hits += 1
+                consider_image(image_path, cache.get_cached(image_key))
+                processed += 1
+                search_job.num_images_processed = processed
+                continue
+            pending.append(image_path)
+
+        for batch_start in range(0, len(pending), _BATCH_SIZE):
+            batch_paths = pending[batch_start : batch_start + _BATCH_SIZE]
             embeddings, predictions = model.get_batch_embeddings(batch_paths)
 
             for image_path, image_embeddings, image_predictions in zip(
                 batch_paths, embeddings, predictions
             ):
-                if image_embeddings is None or len(image_embeddings) == 0:
-                    continue
-                vecs = image_embeddings.detach().cpu().numpy().astype(np.float32)
-
-                # Keep only the closest detection per image, so the same image never appears
-                # more than once among the neighbours even if it has several matching detections.
-                best_result: SearchResult | None = None
-                for vec, pred in zip(vecs, image_predictions):
-                    distance = _cosine_distance(query_vec, query_norm, vec)
-                    if best_result is None or distance < best_result.distance:
-                        best_result = SearchResult(
-                            image_path=str(image_path),
-                            bbox=pred.bbox,
-                            confidence=pred.confidence,
-                            class_id=pred.class_id,
-                            distance=distance,
-                        )
-                if best_result is None:
-                    continue
-
-                tie_breaker += 1
-                if len(heap) < search_job.k:
-                    heapq.heappush(heap, (-best_result.distance, tie_breaker, best_result))
-                elif -heap[0][0] > best_result.distance:
-                    heapq.heapreplace(heap, (-best_result.distance, tie_breaker, best_result))
+                detections: list[tuple[Prediction, list[float]]] = []
+                if image_embeddings is not None and len(image_embeddings) > 0:
+                    vecs = image_embeddings.detach().cpu().numpy().astype(np.float32)
+                    detections = [
+                        (pred, vec.tolist()) for vec, pred in zip(vecs, image_predictions)
+                    ]
+                cache.store(str(image_path), detections)
+                consider_image(image_path, detections)
 
             processed += len(batch_paths)
             search_job.num_images_processed = processed
             logger.info(
                 f"[search {search_job.id}] {processed}/{len(images)} image(s) scanned"
             )
+
+        logger.info(
+            f"[search {search_job.id}] {num_cache_hits}/{len(images)} image(s) served from cache"
+        )
 
         heap.sort(key=lambda entry: -entry[0])  # ascending distance
         search_job.results = [entry[2] for entry in heap]

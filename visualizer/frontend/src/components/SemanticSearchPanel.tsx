@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getSemanticSearch, getSemanticSearchResultImageUrl } from "../api/client";
 import type { SemanticSearchResultDTO, SemanticSearchStatusResponse } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
@@ -14,6 +14,9 @@ interface SemanticSearchPanelProps {
 }
 
 const POLL_INTERVAL_MS = 1500;
+const MIN_TILE_SIZE = 90;
+const MAX_TILE_SIZE = 320;
+const DEFAULT_TILE_SIZE = 160;
 
 /** Panel shown next to the embedding plot with the progress/results of one semantic-search job.
  *
@@ -30,6 +33,7 @@ export default function SemanticSearchPanel({
 }: SemanticSearchPanelProps) {
   const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tileSize, setTileSize] = useState(DEFAULT_TILE_SIZE);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -109,7 +113,25 @@ export default function SemanticSearchPanel({
           <p className="search-panel-summary">
             {status.results?.length ?? 0} vecino(s) encontrado(s)
           </p>
-          <div className="search-panel-results">
+          <div className="search-panel-toolbar">
+            <label htmlFor="ss-zoom-slider" className="search-panel-zoom-label">
+              Tamaño: {tileSize}px
+            </label>
+            <input
+              id="ss-zoom-slider"
+              type="range"
+              min={MIN_TILE_SIZE}
+              max={MAX_TILE_SIZE}
+              step={10}
+              value={tileSize}
+              onChange={(e) => setTileSize(Number(e.currentTarget.value))}
+              className="search-panel-zoom-slider"
+            />
+          </div>
+          <div
+            className="search-panel-results"
+            style={{ "--ss-tile-size": `${tileSize}px` } as CSSProperties}
+          >
             {(status.results ?? []).map((r, i) => {
               const label = categories[r.class_id] ?? `Clase ${r.class_id}`;
               const imageUrl = getSemanticSearchResultImageUrl(jobId, searchId, i);
