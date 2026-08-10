@@ -52,6 +52,11 @@ class SearchResult:
     image_path: str
     prediction: Prediction
     distance: float
+    # The id of the ScanUnit this detection came from (e.g. a plain image path, or a tile
+    # id like "img.tif::tile_0_0_560_560"). Sources use this to re-render exactly the same
+    # unit that was fed to the model when producing a preview, instead of an arbitrary crop
+    # around the bbox -- see e.g. TiledImageSource.render_result_preview.
+    unit_id: str
 
 
 @dataclass
@@ -110,7 +115,7 @@ def run_semantic_search(
 
         cache = SearchCache(folder, model_path=str(model.model_path), model_type=model_type)
 
-        units = list(source.iter_scan_units(folder))
+        units = list(source.iter_scan_units(folder, model))
         search_job.num_images_total = len(units)
         logger.info(f"[search {search_job.id}] found {len(units)} unit(s) to scan")
 
@@ -122,7 +127,7 @@ def run_semantic_search(
         best_by_group: dict[str, SearchResult] = {}
 
         def consider_unit(
-            group_key: str, detections: list[tuple[Prediction, list[float]]]
+            unit_id: str, group_key: str, detections: list[tuple[Prediction, list[float]]]
         ) -> None:
             best_result: SearchResult | None = None
             for pred, embedding in detections:
@@ -138,6 +143,7 @@ def run_semantic_search(
                         image_path=group_key,
                         prediction=prediction,
                         distance=distance,
+                        unit_id=unit_id,
                     )
             if best_result is None:
                 return
@@ -151,7 +157,7 @@ def run_semantic_search(
         for unit in units:
             if cache.is_scanned(unit.id):
                 num_cache_hits += 1
-                consider_unit(unit.group_key, cache.get_cached(unit.id))
+                consider_unit(unit.id, unit.group_key, cache.get_cached(unit.id))
                 processed += 1
                 search_job.num_images_processed = processed
                 continue
@@ -163,7 +169,7 @@ def run_semantic_search(
 
             for unit, detections in zip(batch_units, batch_detections):
                 cache.store(unit.id, detections)
-                consider_unit(unit.group_key, detections)
+                consider_unit(unit.id, unit.group_key, detections)
 
             processed += len(batch_units)
             search_job.num_images_processed = processed

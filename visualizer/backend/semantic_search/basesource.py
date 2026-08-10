@@ -21,10 +21,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
 
 if TYPE_CHECKING:
-    from visualizer.backend.models.basemodel import BaseModel
     from visualizer.backend.semantic_search.engine import SearchResult
 
 
@@ -77,7 +77,7 @@ class BaseSemanticSearchSource(ABC):
     """
 
     @abstractmethod
-    def iter_scan_units(self, folder: Path) -> Iterator[ScanUnit]:
+    def iter_scan_units(self, folder: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
         """Enumerate the units of work to run inference on, under *folder*.
 
         Args:

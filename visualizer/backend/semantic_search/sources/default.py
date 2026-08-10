@@ -15,6 +15,7 @@ previewed by serving the original image file straight off disk.
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
@@ -24,6 +25,9 @@ from visualizer.backend.semantic_search.basesource import (
     ScanUnit,
     SearchResultPreview,
 )
+
+if TYPE_CHECKING:
+    from visualizer.backend.models.basemodel import BaseModel
 
 logger = get_logger()
 
@@ -47,8 +51,12 @@ class DefaultImageSource(BaseSemanticSearchSource):
     "one result per image", exactly as before this source-based refactor.
     """
 
-    def iter_scan_units(self, folder: Path) -> Iterator[ScanUnit]:
-        """Yield one :class:`ScanUnit` per supported image file under *folder*."""
+    def iter_scan_units(self, folder: Path, model: "BaseModel | None" = None) -> Iterator[ScanUnit]:
+        """Yield one :class:`ScanUnit` per supported image file under *folder*.
+
+        ``model`` is unused here (every image is fed to the model at its own native size,
+        unlike a tiled source which needs to know the model's input resolution up front).
+        """
         for path in sorted(folder.rglob("*")):
             if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
                 image_path = str(path)

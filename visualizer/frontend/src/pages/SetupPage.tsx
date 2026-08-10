@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJob } from "../api/client";
 import { useAppConfig } from "../context/AppContext";
 import type { CheckDatasetResponse } from "../types";
+import bieleDigitalVideo from "../assets/BIELE_DIGITAL.mp4";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -193,14 +194,24 @@ export default function SetupPage() {
   const showModelFields = dbChoice !== "load";
 
   return (
-    <main className="setup-container">
-      <h1>RF-DETR Visualizer</h1>
-      <p className="setup-subtitle">
-        Introduce el dataset y el modelo que quieres investigar. Se calcularán los embeddings y las predicciones
-        antes de pasar a la visualización.
-      </p>
+    <div className="setup-page">
+      <video
+        className="setup-video-bg"
+        src={bieleDigitalVideo}
+        autoPlay
+        muted
+        loop
+        playsInline
+      />
+      <div className="setup-video-overlay" />
+      <main className="setup-container">
+        <h1>RF-DETR Visualizer</h1>
+        <p className="setup-subtitle">
+          Introduce el dataset y el modelo que quieres investigar. Se calcularán los embeddings y las predicciones
+          antes de pasar a la visualización.
+        </p>
 
-      <form className="setup-form" onSubmit={handleSubmit}>
+        <form className="setup-form" onSubmit={handleSubmit}>
         <label className="field">
           <span>Ruta del dataset</span>
           <div className="path-field">
@@ -315,7 +326,8 @@ export default function SetupPage() {
           <div className="progress-bar-fill" style={{ width: `${Math.min(progressFraction, 1) * 100}%` }} />
         </div>
       )}
-      {errorMessage && <p className="setup-error">{errorMessage}</p>}
-    </main>
+        {errorMessage && <p className="setup-error">{errorMessage}</p>}
+      </main>
+    </div>
   );
 }

@@ -1,0 +1,73 @@
+/* ── PCA panel (in header) ── */
+.pca-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.65rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-border);
+  border-radius: var(--radius-md);
+  flex-wrap: nowrap;
+}
+
+.pca-panel-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pca-dims {
+  display: flex;
+  gap: 0.55rem;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.pca-dims legend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.15rem;
+}
+
+.pca-btn {
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.pca-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.pca-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pca-btn-clear {
+  background: #b3541e;
+}
+
+.pca-btn-clear:hover:not(:disabled) {
+  background: #d1631f;
+}
+
+.pca-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.cluster-sel-badge {
+  color: var(--warning);
+  font-weight: 600;
+}

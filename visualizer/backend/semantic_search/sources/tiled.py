@@ -10,12 +10,15 @@ Each source image is first downscaled to a third of its original size (in memory
 written to disk), then chopped into a grid of non-overlapping tiles matching the model's
 input resolution; each tile becomes its own :class:`ScanUnit`. Detections are translated
 back from tile-local pixel coordinates into the *original* image's coordinate space in
-:meth:`TiledImageSource.process_batch`, since that's the space ``render_result_preview``
-re-reads the source file in to produce a preview.
+:meth:`TiledImageSource.process_batch`, so the resulting bbox always means something
+against the full-resolution source file on disk (e.g. for downstream consumers other than
+the preview itself).
 
 Unlike :class:`~visualizer.backend.semantic_search.sources.default.DefaultImageSource`,
-previews here are always a crop around the detection (never the whole image) -- the whole
-point of tiling is that the source images are too large to reasonably display in full.
+``render_result_preview`` here never serves the (possibly huge) source image, nor an
+arbitrary crop around the detection: it re-renders *the exact tile that was fed to the
+model* when the result's embedding was computed (recomputing the same downscale + crop
+from ``result.unit_id``), so what the user sees is precisely what was scored.
 """
 
 import io
@@ -59,29 +62,17 @@ class TiledImageSource(BaseSemanticSearchSource):
     #: Source images are downscaled to this fraction of their original size before tiling.
     RESIZE_FACTOR = 1.0 / 3.0
 
-    #: Extra context (as a fraction of the detection's own width/height) kept around a
-    #: detection when cropping its preview, so the object isn't shown edge-to-edge.
-    PREVIEW_MARGIN_RATIO = 0.25
-
     #: Previews are downscaled (preserving aspect ratio) so neither side exceeds this many
     #: pixels, keeping them light enough to embed as base64 data URLs.
     PREVIEW_MAX_SIZE = 800
 
-    def __init__(self, tile_size: int = 560):
-        """Args:
-        tile_size: Width/height (in pixels of the *resized* image) of each square tile fed
-            to the model. Should match the model's own input resolution (e.g. 512 for
-            RFDETRSmall, 560 for RFDETRBase) so tiles aren't internally resized twice.
-        """
-        self.tile_size = tile_size
-
-    def iter_scan_units(self, folder: Path) -> Iterator[ScanUnit]:
+    def iter_scan_units(self, folder: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
         """Yield one :class:`ScanUnit` per tile of every supported image under *folder*."""
         for path in sorted(folder.rglob("*")):
             if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                yield from self._iter_image_tiles(path)
+                yield from self._iter_image_tiles(path, model)
 
-    def _iter_image_tiles(self, path: Path) -> Iterator[ScanUnit]:
+    def _iter_image_tiles(self, path: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
         """Downscale *path* by :attr:`RESIZE_FACTOR` and split it into a tile grid."""
         image_path = str(path)
         with Image.open(path) as img:
@@ -92,14 +83,17 @@ class TiledImageSource(BaseSemanticSearchSource):
             resized = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
             resized_arr = np.asarray(resized)
 
+        if model is None: raise Exception("Se ha intentado procesar un TiledImageSource sin modelo: no se conoce el tile size")
+        if not hasattr(model, "input_shape"): raise Exception("Se ha intentado procesar un TiledImageSource con un modelo sin input_shape: no se conoce el tile size")
+
         logger.debug(
             f"Tiling '{image_path}': {orig_w}x{orig_h} -> {resized_w}x{resized_h}, "
-            f"tile_size={self.tile_size}"
+            f"tile_size={model.input_shape}"
         )
-        for y0 in range(0, resized_h, self.tile_size):
-            y1 = min(y0 + self.tile_size, resized_h)
-            for x0 in range(0, resized_w, self.tile_size):
-                x1 = min(x0 + self.tile_size, resized_w)
+        for y0 in range(0, resized_h, model.input_shape):
+            y1 = min(y0 + model.input_shape, resized_h)
+            for x0 in range(0, resized_w, model.input_shape):
+                x1 = min(x0 + model.input_shape, resized_w)
                 tile = resized_arr[y0:y1, x0:x1]
                 unit_id = f"{image_path}{_TILE_MARKER}{x0}_{y0}_{x1}_{y1}"
                 yield ScanUnit(id=unit_id, group_key=image_path, inference_input=tile)
@@ -112,7 +106,7 @@ class TiledImageSource(BaseSemanticSearchSource):
         Overrides the default implementation because only this source knows each tile's
         offset within its resized source image (and the resize factor applied), needed to
         turn a tile-local bbox into a bbox that means something against the original file
-        on disk (which is what :meth:`render_result_preview` re-reads).
+        on disk.
         """
         inputs = [unit.inference_input for unit in batch]
         embeddings, predictions = model.get_batch_embeddings(inputs)
@@ -135,8 +129,7 @@ class TiledImageSource(BaseSemanticSearchSource):
 
     def _parse_tile_offset(self, unit_id: str) -> tuple[int, int]:
         """Recover a tile's ``(x0, y0)`` offset within its resized source image from its id."""
-        _, _, marker = unit_id.partition(_TILE_MARKER)
-        x0, y0, _x1, _y1 = (int(v) for v in marker.split("_"))
+        x0, y0, _x1, _y1 = self._parse_tile_bounds(unit_id)
         return x0, y0
 
     def _tile_bbox_to_source(
@@ -155,56 +148,63 @@ class TiledImageSource(BaseSemanticSearchSource):
         return tuple(v / self.RESIZE_FACTOR for v in (rx0, ry0, rx1, ry1))
 
     def render_result_preview(self, result: SearchResult) -> SearchResultPreview:
-        """Crop the original source image around *result*'s detection and re-encode it.
+        """Re-render *the exact tile* that was fed to the model for *result*'s embedding.
 
-        Re-reads only the region of the source file around the bbox (with some margin),
-        rescales it to a WebView-friendly size, and JPEG-encodes it in memory -- the full
-        (possibly huge) source image is never loaded whole or served/written to disk.
+        Recomputes the same downscale (:attr:`RESIZE_FACTOR`) applied in
+        :meth:`_iter_image_tiles` and crops out the tile bounds encoded in
+        ``result.unit_id`` -- i.e. exactly the pixels the model actually scored -- instead
+        of an arbitrary crop around the (translated) detection bbox. Only that small region
+        of the source file is ever loaded into memory; the full (possibly huge) source
+        image is never read whole or written/served from disk.
         """
         image_path = Path(result.image_path)
         if not image_path.exists():
             raise FileNotFoundError(f"Image file not found on disk: {image_path}")
 
-        bbox = result.prediction.bbox
+        tile_x0, tile_y0, tile_x1, tile_y1 = self._parse_tile_bounds(result.unit_id)
+
         with Image.open(image_path) as img:
             img = img.convert("RGB")
             orig_w, orig_h = img.size
-
-            if bbox is not None:
-                x0, y0, x1, y1 = bbox
-                margin_x = (x1 - x0) * self.PREVIEW_MARGIN_RATIO
-                margin_y = (y1 - y0) * self.PREVIEW_MARGIN_RATIO
-                crop_x0 = max(0, int(x0 - margin_x))
-                crop_y0 = max(0, int(y0 - margin_y))
-                crop_x1 = min(orig_w, int(x1 + margin_x) + 1)
-                crop_y1 = min(orig_h, int(y1 + margin_y) + 1)
-            else:
-                crop_x0, crop_y0, crop_x1, crop_y1 = 0, 0, orig_w, orig_h
-
-            crop = img.crop((crop_x0, crop_y0, crop_x1, crop_y1))
-            crop_w, crop_h = crop.size
+            resized_w = max(1, round(orig_w * self.RESIZE_FACTOR))
+            resized_h = max(1, round(orig_h * self.RESIZE_FACTOR))
+            resized = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
+            tile = resized.crop((tile_x0, tile_y0, tile_x1, tile_y1))
+            tile_w, tile_h = tile.size
 
             scale = 1.0
-            if max(crop_w, crop_h) > self.PREVIEW_MAX_SIZE:
-                scale = self.PREVIEW_MAX_SIZE / max(crop_w, crop_h)
-                crop = crop.resize(
-                    (max(1, round(crop_w * scale)), max(1, round(crop_h * scale))),
+            if max(tile_w, tile_h) > self.PREVIEW_MAX_SIZE:
+                scale = self.PREVIEW_MAX_SIZE / max(tile_w, tile_h)
+                tile = tile.resize(
+                    (max(1, round(tile_w * scale)), max(1, round(tile_h * scale))),
                     Image.Resampling.LANCZOS,
                 )
 
             buffer = io.BytesIO()
-            crop.save(buffer, format="JPEG", quality=90)
+            tile.save(buffer, format="JPEG", quality=90)
             content = buffer.getvalue()
 
+        # result.prediction.bbox is already in original-image coordinates (see
+        # process_batch/_tile_bbox_to_source); translate it back into this tile's own local
+        # coordinates: original -> resized (apply RESIZE_FACTOR), then resized -> tile-local
+        # (shift by the tile's own offset), then apply the same preview downscale as above.
         local_bbox = None
+        bbox = result.prediction.bbox
         if bbox is not None:
+            rx0, ry0, rx1, ry1 = (v * self.RESIZE_FACTOR for v in bbox)
             local_bbox = (
-                (x0 - crop_x0) * scale,
-                (y0 - crop_y0) * scale,
-                (x1 - crop_x0) * scale,
-                (y1 - crop_y0) * scale,
+                (rx0 - tile_x0) * scale,
+                (ry0 - tile_y0) * scale,
+                (rx1 - tile_x0) * scale,
+                (ry1 - tile_y0) * scale,
             )
         return SearchResultPreview(content=content, media_type="image/jpeg", bbox=local_bbox)
+
+    def _parse_tile_bounds(self, unit_id: str) -> tuple[int, int, int, int]:
+        """Recover a tile's ``(x0, y0, x1, y1)`` bounds within its resized source image."""
+        _, _, marker = unit_id.partition(_TILE_MARKER)
+        x0, y0, x1, y1 = (int(v) for v in marker.split("_"))
+        return x0, y0, x1, y1
 
 
 __all__ = ["TiledImageSource"]

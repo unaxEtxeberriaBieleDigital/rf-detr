@@ -34,14 +34,18 @@ class RFDETR(BaseModel):
             )
 
         self.model_variants = [RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge]
+        variant_found = False
         for variant in self.model_variants:
             try:
                 self.model = variant(pretrain_weights=self.model_path, device=self.device)
                 logger.info(f"Loaded {variant.__name__} weights from '{self.model_path}' on device '{self.device}'")
-                return
+                variant_found = True
             except Exception as e:
                 logger.debug(f"Model weights do not correspond to {variant}, retrying... \nError message: {e}")
-        raise TypeError(f"Expected one of the following models, but could not find any: {self.model_variants}")
+
+        if (not variant_found): raise TypeError(f"Expected one of the following models, but could not find any: {self.model_variants}")
+
+        self.input_shape = self.model.resolution
 
     def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
         logger.debug(f"Running inference on a batch of {len(batch)} image(s) on device '{self.device}'")

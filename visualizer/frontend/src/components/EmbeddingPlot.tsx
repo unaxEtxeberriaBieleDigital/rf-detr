@@ -156,7 +156,7 @@ export default function EmbeddingPlot({
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
-          color: "#888",
+          color: "#ff0000",
           fontSize: "0.9rem",
           textAlign: "center",
           padding: "1rem",
@@ -175,6 +175,8 @@ export default function EmbeddingPlot({
       data={traces}
       layout={{
         autosize: true,
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "#202020",
         margin: { l: 30, r: 10, t: 10, b: 30 },
         legend: { orientation: "h" },
         uirevision: `dims-${dimensions}`,

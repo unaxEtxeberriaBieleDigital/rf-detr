@@ -1,0 +1,39 @@
+/* Global dark-mode design tokens shared across the whole app. */
+:root {
+  color-scheme: dark;
+
+  --bg-app: #0b0d10;
+  --bg-surface: #12151a;
+  --bg-surface-alt: #171b21;
+  --bg-elevated: #1c2129;
+  --bg-hover: #232933;
+  --bg-input: #171b21;
+
+  --border-subtle: #262b33;
+  --border-strong: #333a45;
+
+  --text-primary: #eef0f3;
+  --text-secondary: #9aa2ad;
+  --text-muted: #6b727c;
+
+  --accent: #4f8cff;
+  --accent-hover: #6ea0ff;
+  --accent-soft: rgba(79, 140, 255, 0.14);
+  --accent-soft-border: rgba(79, 140, 255, 0.35);
+
+  --danger: #ef5350;
+  --danger-soft: rgba(239, 83, 80, 0.14);
+  --warning: #f2a93c;
+  --success: #4caf6d;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+
+  --font-family: "Inter", "Avenir", Helvetica, Arial, sans-serif;
+}
