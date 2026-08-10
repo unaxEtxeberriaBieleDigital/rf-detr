@@ -151,14 +151,17 @@ export default function FilterSidebar({
     });
   }, [records, categories]);
 
-  // Count per quality (for badges)
+  // Count per quality (for badges), respecting every other active filter (confidence,
+  // classes, splits) so the pills reflect what the current confidence threshold would
+  // actually show -- only the quality filter itself is excluded from this pass.
   const qualityCounts = useMemo(() => {
     const counts: Record<string, number> = { tp: 0, fp: 0, fn: 0, misclassified: 0 };
-    for (const r of records) {
+    const withoutQualityFilter: FilterState = { ...filters, qualities: new Set() };
+    for (const r of applyFilters(records, withoutQualityFilter)) {
       if (r.status in counts) counts[r.status]++;
     }
     return counts;
-  }, [records]);
+  }, [records, filters]);
 
   // ---- Handlers --------------------------------------------------------
 

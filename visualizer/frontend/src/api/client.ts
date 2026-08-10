@@ -143,6 +143,7 @@ export interface StartSemanticSearchRequest {
   k: number;
   model_path: string;
   model_type: string;
+  source_type?: string;
 }
 
 export function startSemanticSearch(
@@ -162,12 +163,4 @@ export function listSemanticSearches(jobId: string): Promise<SemanticSearchStatu
 
 export function getSemanticSearch(jobId: string, searchId: string): Promise<SemanticSearchStatusResponse> {
   return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
-}
-
-export function getSemanticSearchResultImageUrl(
-  jobId: string,
-  searchId: string,
-  resultIndex: number,
-): string {
-  return `${API_BASE_URL}/api/v1/jobs/${jobId}/semantic-search/${searchId}/images/${resultIndex}`;
 }

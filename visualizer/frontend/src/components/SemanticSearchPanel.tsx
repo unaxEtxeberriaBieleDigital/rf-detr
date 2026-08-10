@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { getSemanticSearch, getSemanticSearchResultImageUrl } from "../api/client";
+import { getSemanticSearch } from "../api/client";
 import type { SemanticSearchResultDTO, SemanticSearchStatusResponse } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 
@@ -134,7 +134,7 @@ export default function SemanticSearchPanel({
           >
             {(status.results ?? []).map((r, i) => {
               const label = categories[r.class_id] ?? `Clase ${r.class_id}`;
-              const imageUrl = getSemanticSearchResultImageUrl(jobId, searchId, i);
+              const imageUrl = r.preview_data_url;
               return (
                 <div
                   key={i}

@@ -65,6 +65,10 @@ export interface SemanticSearchResultDTO {
   confidence: number;
   class_id: number;
   distance: number;
+  /** Preview of the matching detection, already rendered/cropped in-memory by the backend and
+   *  base64-encoded as a data URL (e.g. "data:image/jpeg;base64,..."), ready to use as an
+   *  <img> src with no extra HTTP request. */
+  preview_data_url: string;
 }
 
 export interface SemanticSearchStatusResponse {
