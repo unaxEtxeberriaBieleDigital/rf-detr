@@ -20,6 +20,7 @@ Typical flow for the frontend:
     7. POST /api/v1/jobs/{job_id}/pca?components=2          -> compute PCA on demand
 """
 
+import base64
 import json
 import threading
 import uuid
@@ -36,9 +37,10 @@ from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models import rfdetr  # noqa: F401
-from visualizer.backend.prediction import Prediction
-from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY
+from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
+from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource
+from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
 from visualizer.backend.store import DB_FILENAME, JobStore
 
 logger = get_logger()
@@ -116,12 +118,16 @@ class SemanticSearchRequest(PydanticModel):
     k: int = 20
     model_path: str
     model_type: str
+    source_type: str = "default"
 
 
 class SemanticSearchResultDTO(PydanticModel):
     image_path: str
-    prediction: Prediction
+    bbox: tuple[float, float, float, float] | None
+    confidence: float
+    class_id: int
     distance: float
+    preview_data_url: str
 
 
 class SemanticSearchStatusResponse(PydanticModel):
@@ -520,6 +526,12 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
             400,
             f"Unknown model_type '{request.model_type}'. Available: {sorted(MODEL_REGISTRY)}",
         )
+    if request.source_type not in SEMANTIC_SEARCH_SOURCE_REGISTRY:
+        raise HTTPException(
+            400,
+            f"Unknown source_type '{request.source_type}'. "
+            f"Available: {sorted(SEMANTIC_SEARCH_SOURCE_REGISTRY)}",
+        )
 
     query_embedding = job.store.get_raw_embedding(request.query_record_id)
     if query_embedding is None:
@@ -544,17 +556,22 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
         query_image_path=query_image_path,
         search_path=request.search_path,
         k=request.k,
+        source_type=request.source_type,
     )
     SEARCH_JOB_STORE[search_job.id] = search_job
 
     logger.info(
         f"Created semantic search {search_job.id} for job {job_id}: "
-        f"query_record_id='{request.query_record_id}', search_path='{request.search_path}', k={request.k}"
+        f"query_record_id='{request.query_record_id}', search_path='{request.search_path}', "
+        f"k={request.k}, source_type='{request.source_type}'"
     )
+
+    source_cls = SEMANTIC_SEARCH_SOURCE_REGISTRY[request.source_type]
+    source = source_cls()
 
     thread = threading.Thread(
         target=run_semantic_search,
-        args=(search_job, model, request.model_type, query_embedding),
+        args=(search_job, model, request.model_type, query_embedding, source),
         daemon=True,
     )
     thread.start()
@@ -588,18 +605,6 @@ def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResp
     return _search_job_to_response(search_job, include_results=True)
 
 
-@app.get("/api/v1/jobs/{job_id}/semantic-search/{search_id}/images/{result_index}")
-def get_semantic_search_result_image(job_id: str, search_id: str, result_index: int) -> FileResponse:
-    _get_job_or_404(job_id)
-    search_job = _get_search_job_or_404(search_id)
-    if result_index < 0 or result_index >= len(search_job.results):
-        raise HTTPException(404, "Result index out of range")
-    image_path = Path(search_job.results[result_index].image_path)
-    if not image_path.exists():
-        raise HTTPException(404, f"Image file not found on disk: {image_path}")
-    return FileResponse(image_path)
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -619,23 +624,39 @@ def _get_search_job_or_404(search_id: str) -> SearchJob:
     return search_job
 
 
+def _get_semantic_search_source(source_type: str) -> BaseSemanticSearchSource:
+    source_cls = SEMANTIC_SEARCH_SOURCE_REGISTRY.get(source_type)
+    if source_cls is None:
+        raise HTTPException(400, f"Unknown source_type '{source_type}'")
+    return source_cls()
+
+
 def _search_job_to_response(
     search_job: SearchJob, include_results: bool = False
 ) -> SemanticSearchStatusResponse:
     results = None
     if include_results and search_job.status == "done":
-        results = [
-            SemanticSearchResultDTO(
-                image_path=r.image_path,
-                prediction=Prediction(
-                    bbox=r.prediction.bbox,
+        source = _get_semantic_search_source(search_job.source_type)
+        results = []
+        for r in search_job.results:
+            try:
+                preview = source.render_result_preview(r)
+            except FileNotFoundError as e:
+                logger.warning(f"Skipping semantic-search result, could not render preview: {e}")
+                continue
+            preview_data_url = (
+                f"data:{preview.media_type};base64,{base64.b64encode(preview.content).decode('ascii')}"
+            )
+            results.append(
+                SemanticSearchResultDTO(
+                    image_path=r.image_path,
+                    bbox=preview.bbox,
                     confidence=r.prediction.confidence,
                     class_id=r.prediction.class_id,
-                ),
-                distance=r.distance,
+                    distance=r.distance,
+                    preview_data_url=preview_data_url,
+                )
             )
-            for r in search_job.results
-        ]
     return SemanticSearchStatusResponse(
         id=search_job.id,
         parent_job_id=search_job.parent_job_id,

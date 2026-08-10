@@ -35,6 +35,34 @@ export function defaultFilterState(): FilterState {
   };
 }
 
+/** Returns the confidence threshold that applies to *classId* (per-class override, or the
+ *  global minimum confidence when there's no override). */
+function getConfidenceThreshold(classId: number | null, filters: FilterState): number {
+  const perClass = classId !== null ? filters.perClassConfidence.get(classId) : undefined;
+  return perClass !== undefined ? perClass : filters.minConfidence;
+}
+
+/** Recomputes a record's prediction-quality status after applying the confidence threshold.
+ *
+ *  The backend matches every prediction to ground truth regardless of confidence (see
+ *  ``evaluator.match_detections``), so a low-confidence detection can still "claim" a
+ *  ground-truth box as tp/misclassified. Once the confidence threshold rises above that
+ *  detection's own confidence, it effectively stops existing: any ground truth it had
+ *  claimed becomes a miss ("fn"), while a plain false positive (no ground truth) simply
+ *  disappears -- it doesn't count as anything.
+ */
+function getEffectiveStatus(r: EmbeddingRecordDTO, filters: FilterState): PredQuality | null {
+  if (!r.prediction) {
+    return r.status as PredQuality;
+  }
+  const classId = r.ground_truth?.class_id ?? r.prediction.class_id ?? null;
+  const threshold = getConfidenceThreshold(classId, filters);
+  if (r.prediction.confidence >= threshold) {
+    return r.status as PredQuality;
+  }
+  return r.ground_truth ? "fn" : null;
+}
+
 /** Apply FilterState to a list of records and return the matching subset. */
 export function applyFilters(
   records: EmbeddingRecordDTO[],
@@ -56,9 +84,7 @@ export function applyFilters(
 
     // Confidence filter
     if (r.prediction) {
-      const perClass =
-        classId !== null ? filters.perClassConfidence.get(classId) : undefined;
-      const threshold = perClass !== undefined ? perClass : filters.minConfidence;
+      const threshold = getConfidenceThreshold(classId, filters);
       if (r.prediction.confidence < threshold) return false;
     }
 
@@ -153,12 +179,22 @@ export default function FilterSidebar({
 
   // Count per quality (for badges), respecting every other active filter (confidence,
   // classes, splits) so the pills reflect what the current confidence threshold would
-  // actually show -- only the quality filter itself is excluded from this pass.
+  // actually show -- only the quality filter itself is excluded from this pass. Uses
+  // getEffectiveStatus so a tp/misclassified record whose prediction falls below the
+  // confidence threshold is recounted as "fn" (its ground truth is now unmatched) instead
+  // of just vanishing, which is why the fn badge grows as the threshold rises.
   const qualityCounts = useMemo(() => {
     const counts: Record<string, number> = { tp: 0, fp: 0, fn: 0, misclassified: 0 };
-    const withoutQualityFilter: FilterState = { ...filters, qualities: new Set() };
-    for (const r of applyFilters(records, withoutQualityFilter)) {
-      if (r.status in counts) counts[r.status]++;
+    for (const r of records) {
+      if (filters.visibleSplits.size > 0 && !filters.visibleSplits.has(r.split)) continue;
+
+      const classId = r.ground_truth?.class_id ?? r.prediction?.class_id ?? null;
+      if (filters.visibleClasses.size > 0 && classId !== null && !filters.visibleClasses.has(classId)) {
+        continue;
+      }
+
+      const effectiveStatus = getEffectiveStatus(r, filters);
+      if (effectiveStatus && effectiveStatus in counts) counts[effectiveStatus]++;
     }
     return counts;
   }, [records, filters]);

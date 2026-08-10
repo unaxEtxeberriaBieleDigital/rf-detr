@@ -7,6 +7,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from visualizer.backend.prediction import Prediction
@@ -26,8 +27,13 @@ class BaseModel(ABC):
             raise TypeError(f"Expected a pth file, but got the following file: {path}")
 
     @abstractmethod
-    def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
+    def get_batch_embeddings(
+        self, batch: list[str | Path | np.ndarray]
+    ) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
         """Method to extract the embeddings of a batch.
+
+        Batch elements are typically image paths, but may also be in-memory ``np.ndarray``
+        images (e.g. a tile extracted via windowed reads, never materialised to disk).
 
         Different images can have a different number of (post-threshold) detections, so
         embeddings are returned per-image rather than as one stacked tensor: element ``i`` is

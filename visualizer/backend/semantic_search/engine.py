@@ -4,19 +4,20 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""Semantic (nearest-neighbour) search over an arbitrary folder of images.
+"""Semantic (nearest-neighbour) search over an arbitrary folder, via a pluggable source.
 
 Given a query embedding (taken from an existing prediction in a visualizer job), this
-module runs the model over every image found recursively under a user-chosen folder
-(which need not be one of the dataset's splits) and keeps the ``k`` images whose closest
-detection is nearest to the query, ranked by cosine distance. Each image contributes at
-most one result (its closest-matching detection), so the same image never appears twice
+module runs the model over every unit of work produced by a :class:`BaseSemanticSearchSource`
+(e.g. one unit per image, or one unit per tile of a large image) and keeps the ``k``
+results whose closest detection is nearest to the query, ranked by cosine distance. Units
+sharing the same ``group_key`` (e.g. every tile of the same source image) contribute at
+most one result -- their single best-matching detection -- so a group never appears twice
 among the neighbours.
 
-Per-image inference results (embeddings + predictions) are cached in a small SQLite
-database at the root of the searched folder (see ``visualizer.backend.search_cache``), so
-re-running a search against the same folder with the same model only needs to recompute
-cosine distances -- inference is skipped entirely for already-scanned images.
+Per-unit inference results (embeddings + predictions) are cached in a small SQLite
+database at the root of the searched folder (see ``visualizer.backend.semantic_search.cache``),
+so re-running a search against the same folder with the same model only needs to recompute
+cosine distances -- inference is skipped entirely for already-scanned units.
 
 Runs in a background thread, mirroring ``visualizer.backend.jobs``: the search keeps
 progressing even if no client is polling it, and the frontend can reattach to it (by
@@ -24,7 +25,6 @@ progressing even if no client is polling it, and the frontend can reattach to it
 """
 
 import heapq
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -32,23 +32,23 @@ from typing import Literal
 import numpy as np
 
 from rfdetr.utilities.logger import get_logger
-from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
 from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
-from visualizer.backend.search_cache import SearchCache
+from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource
+from visualizer.backend.semantic_search.cache import SearchCache
 
 logger = get_logger()
 
 SearchStatus = Literal["pending", "running", "done", "error"]
 
-# Number of images sent to the model per inference call.
+# Number of units sent to the model per inference call.
 _BATCH_SIZE = 8
 
 
 @dataclass
 class SearchResult:
-    """One nearest-neighbour hit: a single detection in some image under the search folder."""
-    
+    """One nearest-neighbour hit: the best-matching detection within one result group."""
+
     image_path: str
     prediction: Prediction
     distance: float
@@ -64,6 +64,7 @@ class SearchJob:
     query_image_path: str
     search_path: str
     k: int
+    source_type: str = "default"
     status: SearchStatus = "pending"
     error: str | None = None
     num_images_total: int = 0
@@ -76,18 +77,12 @@ class SearchJob:
 SEARCH_JOB_STORE: dict[str, SearchJob] = {}
 
 
-def iter_images_recursive(folder: Path) -> Iterator[Path]:
-    """Yield every supported image file under *folder*, recursively, in sorted order."""
-    for path in sorted(folder.rglob("*")):
-        if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-            yield path
-
-
 def run_semantic_search(
     search_job: SearchJob,
     model: BaseModel,
     model_type: str,
     query_embedding: list[float],
+    source: BaseSemanticSearchSource,
 ) -> None:
     """Run the nearest-neighbour search for *search_job* and mutate it in place.
 
@@ -96,11 +91,13 @@ def run_semantic_search(
 
     Args:
         search_job: The search job whose state this call fills in.
-        model: Model used to extract per-query embeddings and predictions for the
-            images under ``search_job.search_path``.
+        model: Model used to extract per-unit embeddings and predictions for the units
+            produced by ``source`` over ``search_job.search_path``.
         model_type: The model type/registry key, stored in the on-disk cache purely as
             informational metadata.
         query_embedding: The raw (full-dimensionality) embedding to search for.
+        source: Decides how ``search_job.search_path`` is scanned into inference units
+            (see :class:`BaseSemanticSearchSource`).
     """
     search_job.status = "running"
     logger.info(
@@ -113,21 +110,20 @@ def run_semantic_search(
 
         cache = SearchCache(folder, model_path=str(model.model_path), model_type=model_type)
 
-        images = list(iter_images_recursive(folder))
-        search_job.num_images_total = len(images)
-        logger.info(f"[search {search_job.id}] found {len(images)} image(s) to scan")
+        units = list(source.iter_scan_units(folder))
+        search_job.num_images_total = len(units)
+        logger.info(f"[search {search_job.id}] found {len(units)} unit(s) to scan")
 
         query_vec = np.asarray(query_embedding, dtype=np.float32)
         query_norm = float(np.linalg.norm(query_vec)) or 1.0
 
-        # Min-of-max-heap of size k, keyed by *negative* distance so the worst
-        # (largest-distance) kept result sits at heap[0] and can be evicted in O(log k).
-        # A monotonically increasing tie-breaker avoids ever comparing SearchResult objects.
-        heap: list[tuple[float, int, SearchResult]] = []
-        tie_breaker = 0
+        # Best result seen so far per group_key (e.g. per source image), so units sharing a
+        # group (like tiles of the same image) still contribute at most one final result.
+        best_by_group: dict[str, SearchResult] = {}
 
-        def consider_image(image_path: Path, detections: list[tuple[Prediction, list[float]]]) -> None:
-            nonlocal tie_breaker
+        def consider_unit(
+            group_key: str, detections: list[tuple[Prediction, list[float]]]
+        ) -> None:
             best_result: SearchResult | None = None
             for pred, embedding in detections:
                 vec = np.asarray(embedding, dtype=np.float32)
@@ -139,63 +135,50 @@ def run_semantic_search(
                         class_id=pred.class_id,
                     )
                     best_result = SearchResult(
-                        image_path=str(image_path),
+                        image_path=group_key,
                         prediction=prediction,
                         distance=distance,
                     )
             if best_result is None:
                 return
-            tie_breaker += 1
-            if len(heap) < search_job.k:
-                heapq.heappush(heap, (-best_result.distance, tie_breaker, best_result))
-            elif -heap[0][0] > best_result.distance:
-                heapq.heapreplace(heap, (-best_result.distance, tie_breaker, best_result))
+            existing = best_by_group.get(group_key)
+            if existing is None or best_result.distance < existing.distance:
+                best_by_group[group_key] = best_result
 
         processed = 0
         num_cache_hits = 0
-        pending: list[Path] = []
-        for image_path in images:
-            image_key = str(image_path)
-            if cache.is_scanned(image_key):
+        pending = []
+        for unit in units:
+            if cache.is_scanned(unit.id):
                 num_cache_hits += 1
-                consider_image(image_path, cache.get_cached(image_key))
+                consider_unit(unit.group_key, cache.get_cached(unit.id))
                 processed += 1
                 search_job.num_images_processed = processed
                 continue
-            pending.append(image_path)
+            pending.append(unit)
 
         for batch_start in range(0, len(pending), _BATCH_SIZE):
-            batch_paths = pending[batch_start : batch_start + _BATCH_SIZE]
-            embeddings, predictions = model.get_batch_embeddings(batch_paths)
+            batch_units = pending[batch_start : batch_start + _BATCH_SIZE]
+            batch_detections = source.process_batch(model, batch_units)
 
-            for image_path, image_embeddings, image_predictions in zip(
-                batch_paths, embeddings, predictions
-            ):
-                detections: list[tuple[Prediction, list[float]]] = []
-                if image_embeddings is not None and len(image_embeddings) > 0:
-                    vecs = image_embeddings.detach().cpu().numpy().astype(np.float32)
-                    detections = [
-                        (pred, vec.tolist()) for vec, pred in zip(vecs, image_predictions)
-                    ]
-                cache.store(str(image_path), detections)
-                consider_image(image_path, detections)
+            for unit, detections in zip(batch_units, batch_detections):
+                cache.store(unit.id, detections)
+                consider_unit(unit.group_key, detections)
 
-            processed += len(batch_paths)
+            processed += len(batch_units)
             search_job.num_images_processed = processed
-            logger.info(
-                f"[search {search_job.id}] {processed}/{len(images)} image(s) scanned"
-            )
+            logger.info(f"[search {search_job.id}] {processed}/{len(units)} unit(s) scanned")
 
         logger.info(
-            f"[search {search_job.id}] {num_cache_hits}/{len(images)} image(s) served from cache"
+            f"[search {search_job.id}] {num_cache_hits}/{len(units)} unit(s) served from cache"
         )
 
-        heap.sort(key=lambda entry: -entry[0])  # ascending distance
-        search_job.results = [entry[2] for entry in heap]
+        top_k = heapq.nsmallest(search_job.k, best_by_group.values(), key=lambda r: r.distance)
+        search_job.results = top_k
         search_job.status = "done"
         logger.info(
             f"[search {search_job.id}] done: kept {len(search_job.results)} neighbour(s) "
-            f"out of {len(images)} image(s) scanned"
+            f"out of {len(best_by_group)} group(s) scanned"
         )
     except Exception as e:
         logger.error(f"[search {search_job.id}] failed: {e}", exc_info=True)
@@ -210,4 +193,4 @@ def _cosine_distance(query_vec: np.ndarray, query_norm: float, vec: np.ndarray) 
     return 1.0 - similarity
 
 
-__all__ = ["SearchJob", "SearchResult", "SEARCH_JOB_STORE", "run_semantic_search", "iter_images_recursive"]
+__all__ = ["SearchJob", "SearchResult", "SEARCH_JOB_STORE", "run_semantic_search"]
