@@ -45,7 +45,7 @@ class RFDETR(BaseModel):
 
         if (not variant_found): raise TypeError(f"Expected one of the following models, but could not find any: {self.model_variants}")
 
-        self.input_shape = self.model.resolution
+        self.input_shape = self.model.model.resolution
 
     def get_batch_embeddings(self, batch: list[str | Path]) -> tuple[list[torch.Tensor], list[list[Prediction]]]:
         logger.debug(f"Running inference on a batch of {len(batch)} image(s) on device '{self.device}'")
