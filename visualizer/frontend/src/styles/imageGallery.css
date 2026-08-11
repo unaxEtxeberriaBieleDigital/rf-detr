@@ -196,10 +196,47 @@
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
 }
 
 .image-viewer-body .image-viewer-viewport {
   flex: 1 1 auto;
+}
+
+/* Navigation arrow buttons overlaying the image viewport */
+.iv-nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 2.4rem;
+  height: 4rem;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  /* Don't capture pan/zoom pointer events when not hovered */
+  pointer-events: auto;
+}
+
+.iv-nav-arrow:hover {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.iv-nav-arrow-prev {
+  left: 0.4rem;
+}
+
+.iv-nav-arrow-next {
+  /* Offset from right edge, keeping clear of the sidebar */
+  right: calc(280px + 0.4rem);
 }
 
 /* Image viewer detail sidebar */

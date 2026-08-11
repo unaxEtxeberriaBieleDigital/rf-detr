@@ -27,6 +27,10 @@ interface ImageViewerModalProps {
   /** Called right after a semantic search job is successfully created, so the caller can show
    *  its progress/results (e.g. in a panel next to the embedding plot). */
   onSearchStarted?: (searchId: string) => void;
+  /** Called when the user navigates to the previous image (arrow button or ←). */
+  onPrev?: () => void;
+  /** Called when the user navigates to the next image (arrow button or →). */
+  onNext?: () => void;
   onClose: () => void;
 }
 
@@ -65,6 +69,8 @@ export default function ImageViewerModal({
   imageUrlOverride,
   allowSearch = true,
   onSearchStarted,
+  onPrev,
+  onNext,
   onClose,
 }: ImageViewerModalProps) {
   const panZoomRef = useRef<PanZoomHandle | null>(null);
@@ -167,10 +173,12 @@ export default function ImageViewerModal({
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft") onPrev?.();
+      if (event.key === "ArrowRight") onNext?.();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, onPrev, onNext]);
 
   if (!isOpen || !imagePath || !imageUrl) return null;
 
@@ -219,6 +227,16 @@ export default function ImageViewerModal({
         </div>
 
         <div className="image-viewer-body">
+          {onPrev && (
+            <button
+              type="button"
+              className="iv-nav-arrow iv-nav-arrow-prev"
+              onClick={onPrev}
+              aria-label="Imagen anterior"
+            >
+              ‹
+            </button>
+          )}
           <PanZoomViewport ref={panZoomRef} resetKey={imagePath}>
             <ImageWithBoxes
               imageUrl={imageUrl}
@@ -229,6 +247,16 @@ export default function ImageViewerModal({
               showPredictions={showPredictions}
             />
           </PanZoomViewport>
+          {onNext && (
+            <button
+              type="button"
+              className="iv-nav-arrow iv-nav-arrow-next"
+              onClick={onNext}
+              aria-label="Imagen siguiente"
+            >
+              ›
+            </button>
+          )}
 
         <aside className="iv-sidebar">
           <div className="iv-sidebar-section">

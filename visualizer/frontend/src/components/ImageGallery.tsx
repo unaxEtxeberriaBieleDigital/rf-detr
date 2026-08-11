@@ -154,6 +154,22 @@ export default function ImageGallery({
 
   const openImageRecords = openImagePath ? recordsByImage.get(openImagePath) ?? [] : [];
 
+  const currentVisibleIndex = openImagePath
+    ? visibleEntries.findIndex(([p]) => p === openImagePath)
+    : -1;
+
+  function navigateTo(delta: 1 | -1): void {
+    if (currentVisibleIndex < 0) return;
+    const nextIndex = currentVisibleIndex + delta;
+    if (nextIndex < 0 || nextIndex >= visibleEntries.length) return;
+    const [nextPath] = visibleEntries[nextIndex];
+    onSelectImage(nextPath);
+    setOpenImagePath(nextPath);
+  }
+
+  const hasPrev = currentVisibleIndex > 0;
+  const hasNext = currentVisibleIndex >= 0 && currentVisibleIndex < visibleEntries.length - 1;
+
   return (
     <>
       <div className="image-gallery">
@@ -187,6 +203,8 @@ export default function ImageGallery({
         modelPath={modelPath}
         modelType={modelType}
         onSearchStarted={onSearchStarted}
+        onPrev={hasPrev ? () => navigateTo(-1) : undefined}
+        onNext={hasNext ? () => navigateTo(1) : undefined}
         onClose={() => setOpenImagePath(null)}
       />
     </>
