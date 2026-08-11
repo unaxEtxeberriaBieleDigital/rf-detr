@@ -84,6 +84,7 @@ export default function ImageViewerModal({
   const [searchRecordId, setSearchRecordId] = useState<string | null>(null);
   const [searchFolder, setSearchFolder] = useState("");
   const [searchK, setSearchK] = useState(DEFAULT_SEARCH_K);
+  const [searchSourceType, setSearchSourceType] = useState<"default" | "tiled">("default");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -103,6 +104,7 @@ export default function ImageViewerModal({
         k: searchK,
         model_path: modelPath,
         model_type: modelType,
+        source_type: searchSourceType,
       });
       onSearchStarted?.(created.id);
       onClose();
@@ -156,6 +158,7 @@ export default function ImageViewerModal({
     setSearchRecordId(null);
     setSearchFolder("");
     setSearchK(DEFAULT_SEARCH_K);
+    setSearchSourceType("default");
     setStartError(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, imagePath]);
@@ -356,6 +359,16 @@ export default function ImageViewerModal({
                   value={searchK}
                   onChange={(e) => setSearchK(Math.max(1, Number(e.currentTarget.value)))}
                 />
+              </label>
+              <label className="ss-field">
+                Tipo de búsqueda
+                <select
+                  value={searchSourceType}
+                  onChange={(e) => setSearchSourceType(e.currentTarget.value as "default" | "tiled")}
+                >
+                  <option value="default">Default — una imagen completa por unidad</option>
+                  <option value="tiled">Tiled — divide imágenes grandes en teselas</option>
+                </select>
               </label>
               <button
                 type="button"

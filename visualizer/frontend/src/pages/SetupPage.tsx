@@ -203,7 +203,6 @@ export default function SetupPage() {
         loop
         playsInline
       />
-      <div className="setup-video-overlay" />
       <main className="setup-container">
         <h1>RF-DETR Visualizer</h1>
         <p className="setup-subtitle">

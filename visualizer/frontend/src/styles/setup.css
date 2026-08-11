@@ -1,49 +1,52 @@
 /* --- Setup page --- */
 
 .setup-page {
-  position: relative;
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 0.7fr);
   background: var(--bg-app);
+  overflow: hidden;
 }
+
+/* --- Video --- */
 
 .setup-video-bg {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  inset: auto;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  min-height: 100vh;
   object-fit: cover;
-  opacity: 0.38;
-  filter: saturate(1.1) brightness(0.85);
+  opacity: 1;
+  filter: saturate(1.1) brightness(0.95);
+  display: block;
 }
 
+/* Ya no queremos nada encima del vídeo */
 .setup-video-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 13, 16, 0.55) 0%,
-    rgba(11, 13, 16, 0.82) 55%,
-    rgba(11, 13, 16, 0.96) 100%
-  );
+  display: none;
 }
+
+/* --- Right panel --- */
 
 .setup-container {
   position: relative;
   z-index: 1;
-  max-width: 640px;
   width: 100%;
+  max-width: 620px;
   margin: 0 auto;
-  padding: 4rem 1.75rem 3rem;
+  padding: 3rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow-y: auto;
 }
 
 .setup-container h1 {
   font-size: 2.1rem;
   font-weight: 700;
-  margin-bottom: 0.4rem;
+  margin: 0 0 0.4rem;
+  text-align: center;
   background: linear-gradient(120deg, #ffffff, #9db8ff);
   -webkit-background-clip: text;
   background-clip: text;
@@ -52,8 +55,10 @@
 
 .setup-subtitle {
   color: var(--text-secondary);
-  margin-bottom: 2rem;
+  margin: 0 auto 2rem;
+  max-width: 540px;
   text-align: center;
+  line-height: 1.5;
 }
 
 .setup-form {
@@ -82,6 +87,7 @@
 
 .path-field input {
   flex: 1 1 auto;
+  min-width: 0;
 }
 
 .field span,
@@ -113,6 +119,8 @@ fieldset.field {
   color: var(--text-primary);
 }
 
+/* --- Status --- */
+
 .setup-status {
   margin-top: 1rem;
   color: var(--accent);
@@ -138,7 +146,8 @@ fieldset.field {
   transition: width 0.3s ease;
 }
 
-/* DB detection banner */
+/* --- DB detection banner --- */
+
 .setup-db-checking {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -196,4 +205,42 @@ fieldset.field {
 .setup-db-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 900px) {
+  .setup-page {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .setup-video-bg {
+    height: 38vh;
+    min-height: 300px;
+  }
+
+  .setup-container {
+    max-width: 640px;
+    padding: 2.5rem 1.5rem 3rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .setup-video-bg {
+    height: 30vh;
+    min-height: 220px;
+  }
+
+  .setup-container {
+    padding: 2rem 1rem 2.5rem;
+  }
+
+  .setup-form {
+    padding: 1.25rem;
+  }
+
+  .path-field {
+    flex-direction: column;
+  }
 }
