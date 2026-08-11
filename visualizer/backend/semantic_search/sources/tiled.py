@@ -81,7 +81,7 @@ class TiledImageSource(BaseSemanticSearchSource):
             resized_w = max(1, round(orig_w * self.RESIZE_FACTOR))
             resized_h = max(1, round(orig_h * self.RESIZE_FACTOR))
             resized = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
-            resized_arr = np.asarray(resized)
+            resized_arr = np.asarray(resized).copy()
 
         if model is None: raise Exception("Se ha intentado procesar un TiledImageSource sin modelo: no se conoce el tile size")
         if not hasattr(model, "input_shape"): raise Exception("Se ha intentado procesar un TiledImageSource con un modelo sin input_shape: no se conoce el tile size")
@@ -94,7 +94,7 @@ class TiledImageSource(BaseSemanticSearchSource):
             y1 = min(y0 + model.input_shape, resized_h)
             for x0 in range(0, resized_w, model.input_shape):
                 x1 = min(x0 + model.input_shape, resized_w)
-                tile = resized_arr[y0:y1, x0:x1]
+                tile = resized_arr[y0:y1, x0:x1].copy()
                 unit_id = f"{image_path}{_TILE_MARKER}{x0}_{y0}_{x1}_{y1}"
                 yield ScanUnit(id=unit_id, group_key=image_path, inference_input=tile)
 
