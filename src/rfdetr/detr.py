@@ -42,7 +42,7 @@ from rfdetr.datasets.coco import is_valid_coco_dataset
 from rfdetr.datasets.yolo import REQUIRED_YOLO_YAML_FILES, is_valid_yolo_dataset
 from rfdetr.inference import ModelContext, _build_model_context
 from rfdetr.models.backbone.dinov2 import DinoV2
-from rfdetr.utilities.detections import RFDETRDetections, stack_decoder_layers
+from rfdetr.utilities.detections import RFDETRDetections
 from rfdetr.utilities.distributed import is_main_process
 from rfdetr.utilities.keypoints import _is_bg_first_schema, precision_cholesky_to_pixel_covariance
 from rfdetr.utilities.logger import get_logger
@@ -2393,9 +2393,10 @@ class RFDETR:
         else:
             _class_id_to_name = dict(enumerate(model_class_names))
         predictions_list: list[RFDETRDetections | KeyPoints] = []
-        stacked_query_embeddings = (
-            stack_decoder_layers(predictions["query_embeddings"]) if return_query_embeddings else None
-        )
+        # `query_embeddings_all` has shape [batch_size, num_queries, hidden_dim] — the last
+        # decoder layer's hidden states (hs[-1]), already extracted in LWDETR.forward().
+        # No reshape is needed here because the multi-layer concat was removed upstream.
+        query_embeddings_all = predictions.get("query_embeddings") if return_query_embeddings else None
         for i, result in enumerate(results):
             scores = result["scores"]
             labels = result["labels"]
@@ -2406,15 +2407,14 @@ class RFDETR:
             labels = labels[keep]
             boxes = boxes[keep]
             query_embeddings = None
-            if stacked_query_embeddings is not None:
-                # stacked_query_embeddings: [batch_size, num_queries, num_decoder_layers * hidden_dim].
+            if query_embeddings_all is not None:
                 # `result["query_indices"]` maps each of the top-k selected (query, class) pairs back to
                 # its originating query row — top-k selection is sorted by score, not query index, so it
                 # must be gathered explicitly (the same way boxes/masks/keypoints already are inside
                 # PostProcess) before applying `keep`; boolean-indexing the query-order tensor directly
                 # with `keep` would silently misalign embeddings with their boxes.
                 query_indices = result["query_indices"][keep]
-                query_embeddings = stacked_query_embeddings[i][query_indices].float().cpu().numpy()
+                query_embeddings = query_embeddings_all[i][query_indices].float().cpu().numpy()
             keypoints_array = None
             if "keypoints" in result:
                 keypoints = result["keypoints"][keep]

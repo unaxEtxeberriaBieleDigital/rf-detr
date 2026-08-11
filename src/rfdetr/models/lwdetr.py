@@ -520,7 +520,7 @@ class LWDETR(nn.Module):
         out: dict[str, Any] = {}
         if hs is not None:
             if return_query_embeddings:
-                out["query_embeddings"] = hs
+                out["query_embeddings"] = [-1]
             if self.bbox_reparam:
                 outputs_coord_delta = self.bbox_embed(hs)
                 outputs_coord_cxcy = outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
@@ -561,7 +561,7 @@ class LWDETR(nn.Module):
 
             out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
             if return_query_embeddings:
-                out["query_embeddings"] = hs
+                out["query_embeddings"] = hs[-1]
 
             if self.segmentation_head is not None:
                 out["pred_masks"] = outputs_masks[-1]
