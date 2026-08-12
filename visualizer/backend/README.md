@@ -538,7 +538,7 @@ Primero expondré el orden en el que quiero que se haga cada cosa. Luego, prepar
 
 1. Preparar bien la búsqueda semántica.
 1. Hacer que la experiencia de usuario sea agradable, para que los clientes puedan usarlo: Mejorar la interfaz gráfica. Hacer que sea más rápido. Añadir explicaciones e información para que todo sea más fácil de entender,...
-1. Si terminas de hacer estas dos cosas, pégame un toque y veremos si merece la pena hacer algo más o no. Aunque los dos primeros puntos ya son bastante trabajo para dos semanas, creo yo.
+1. Si terminas de hacer estas dos cosas, pégame un toque y veremos si merece la pena hacer algo más o no. Aunque los dos primeros puntos ya son bastante trabajo para dos semanas, creo yo. [Evaluación de modelos, buscar umbral óptimo por clase, ...]
 
 ### Preparar bien la búsqueda semántica
 
