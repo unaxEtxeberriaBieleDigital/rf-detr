@@ -8,14 +8,15 @@
 
 One :class:`JobStore` maps to one ``rfdetr_visualizer.db`` file placed at the
 root of the dataset directory.  Raw 512-D embeddings are kept permanently so
-that PCA can be (re-)computed at any time without re-running inference.
+that dimensionality reduction can be (re-)computed at any time without
+re-running inference.
 
 Typical lifecycle
 -----------------
 1. ``JobStore(dataset_path)``      – opens (or creates) the DB
 2. ``store.create_tables()``       – idempotent schema setup (called by jobs.py)
 3. ``store.insert_records(batch)`` – called once per inference batch
-4. ``store.compute_pca(2)``        – on-demand, updates ``pca_embedding`` column
+4. ``store.compute_reduction(2)``  – on-demand, updates reduced-coordinates column
 5. API endpoints call ``store.get_records(…)`` etc. for every request
 """
 
@@ -527,11 +528,11 @@ class JobStore:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
 
-    def has_pca(self) -> bool:
-        """Return True if at least one record has PCA coordinates.
+    def has_dimensionality_reduction(self) -> bool:
+        """Return True if at least one record has reduced coordinates.
 
         Returns:
-            Boolean indicating PCA availability.
+            Boolean indicating reduction availability.
         """
         with self._connect() as conn:
             n = conn.execute(
@@ -539,11 +540,11 @@ class JobStore:
             ).fetchone()[0]
         return n > 0
 
-    def pca_components(self) -> int | None:
-        """Return the number of PCA dimensions currently stored, or None.
+    def dimensionality_reduction_components(self) -> int | None:
+        """Return the number of reduced dimensions currently stored, or None.
 
         Returns:
-            Integer dimension count, or None if no PCA has been computed.
+            Integer dimension count, or None if no reduction has been computed.
         """
         with self._connect() as conn:
             row = conn.execute(
@@ -651,8 +652,8 @@ class JobStore:
     def get_raw_embedding(self, record_id: str) -> list[float] | None:
         """Return the full-dimensionality raw embedding for a given record id.
 
-        Unlike the ``embedding`` field in :func:`_row_to_dto` (which prefers the
-        PCA-reduced coordinates once computed), this always returns the original,
+        Unlike the ``embedding`` field in :func:`_row_to_dto` (which prefers
+        reduced coordinates once computed), this always returns the original
         full-dimensionality vector used for similarity search.
 
         Args:
@@ -751,7 +752,7 @@ def _row_to_dto(row: sqlite3.Row) -> dict:
             ),
         }
 
-    # Return the PCA-reduced coords if available, otherwise the raw embedding.
+    # Return reduced coords if available, otherwise the raw embedding.
     embedding: list[float] | None = None
     if row["pca_embedding"] is not None:
         embedding = json.loads(row["pca_embedding"])

@@ -48,8 +48,9 @@ def run_job(
     """Run inference over *splits*, match predictions to ground truth, and persist to SQLite.
 
     Raw embeddings (full dimensionality) are written to the DB per batch so that memory
-    usage stays bounded.  PCA is NOT performed here; it is triggered on demand via the
-    ``POST /api/v1/jobs/{job_id}/pca`` endpoint.
+    usage stays bounded. Dimensionality reduction is NOT performed here; it is
+    triggered on demand via the
+    ``POST /api/v1/jobs/{job_id}/dimensionality_reduction`` endpoint.
 
     Mutates ``job`` in place (``status``, ``error``, ``num_images_*``) so callers can poll
     it from another thread.  Intended to be run in a background thread, not on the
@@ -118,7 +119,8 @@ def run_job(
         job.store.set_meta("status", "done")
         logger.info(
             f"[job {job.id}] done: {total_records} record(s) from "
-            f"{job.num_images_total} image(s).  Run PCA to enable the scatter plot."
+            f"{job.num_images_total} image(s). Run dimensionality reduction to enable "
+            "the scatter plot."
         )
     except Exception as e:
         logger.error(f"[job {job.id}] failed: {e}", exc_info=True)

@@ -17,7 +17,7 @@ Typical flow for the frontend:
     4. GET  /api/v1/jobs/{job_id}                           -> poll until status == "done"
     5. GET  /api/v1/jobs/{job_id}/records?…                 -> fetch (filtered) embedding records
     6. GET  /api/v1/jobs/{job_id}/images/{record_id}        -> fetch the underlying image
-    7. POST /api/v1/jobs/{job_id}/pca?components=2          -> compute PCA on demand
+    7. POST /api/v1/jobs/{job_id}/dimensionality_reduction?components=2 -> compute reduction on demand
 """
 
 import base64
@@ -82,8 +82,8 @@ class JobStatusResponse(PydanticModel):
     categories: dict[int, str] = {}
     num_images_total: int = 0
     num_images_processed: int = 0
-    has_pca: bool = False
-    pca_components: int | None = None
+    has_dimensionality_reduction: bool = False
+    dimensionality_reduction_components: int | None = None
 
 
 class ImagePathPageResponse(PydanticModel):
@@ -102,12 +102,12 @@ class RecordsByImagePathsRequest(PydanticModel):
 class CheckDatasetResponse(PydanticModel):
     has_db: bool
     num_records: int = 0
-    has_pca: bool = False
-    pca_components: int | None = None
+    has_dimensionality_reduction: bool = False
+    dimensionality_reduction_components: int | None = None
     status: str | None = None
 
 
-class PcaStatusResponse(PydanticModel):
+class DimensionalityReductionStatusResponse(PydanticModel):
     updated: int
     components: int
 
@@ -211,8 +211,8 @@ def check_dataset(path: str) -> CheckDatasetResponse:
     return CheckDatasetResponse(
         has_db=True,
         num_records=store.record_count(),
-        has_pca=store.has_pca(),
-        pca_components=store.pca_components(),
+        has_dimensionality_reduction=store.has_dimensionality_reduction(),
+        dimensionality_reduction_components=store.dimensionality_reduction_components(),
         status=status,
     )
 
@@ -346,8 +346,8 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         categories=categories,
         num_images_total=job.num_images_total,
         num_images_processed=job.num_images_processed,
-        has_pca=store.has_pca(),
-        pca_components=store.pca_components(),
+        has_dimensionality_reduction=store.has_dimensionality_reduction(),
+        dimensionality_reduction_components=store.dimensionality_reduction_components(),
     )
 
 
@@ -367,13 +367,13 @@ def get_job(job_id: str) -> JobStatusResponse:
         categories=job.categories,
         num_images_total=job.num_images_total,
         num_images_processed=job.num_images_processed,
-        has_pca=job.store.has_pca(),
-        pca_components=job.store.pca_components(),
+        has_dimensionality_reduction=job.store.has_dimensionality_reduction(),
+        dimensionality_reduction_components=job.store.dimensionality_reduction_components(),
     )
 
 
 # ---------------------------------------------------------------------------
-# PCA (on-demand)
+# Dimensionality reduction (on-demand)
 # ---------------------------------------------------------------------------
 
 
@@ -385,12 +385,15 @@ class ReductionRequest(PydanticModel):
     min_dist: float = 0.1
 
 
-@app.post("/api/v1/jobs/{job_id}/pca", response_model=PcaStatusResponse)
-def compute_reduction(
+@app.post(
+    "/api/v1/jobs/{job_id}/dimensionality_reduction",
+    response_model=DimensionalityReductionStatusResponse,
+)
+def compute_dimensionality_reduction(
     job_id: str,
     components: int = Query(default=2, ge=2, le=3),
     body: ReductionRequest = ReductionRequest(),
-) -> PcaStatusResponse:
+) -> DimensionalityReductionStatusResponse:
     """Compute dimensionality reduction over a set of raw embeddings for this job.
 
     Supports PCA (incremental, memory-safe), t-SNE (batch, O(n log n)), and
@@ -405,7 +408,7 @@ def compute_reduction(
         body: Request body with algorithm, optional record_ids, and hyperparams.
 
     Returns:
-        :class:`PcaStatusResponse` with the number of updated records.
+        :class:`DimensionalityReductionStatusResponse` with the number of updated records.
     """
     job = _get_job_or_404(job_id)
     if job.status != "done":
@@ -421,7 +424,7 @@ def compute_reduction(
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    return PcaStatusResponse(updated=updated, components=components)
+    return DimensionalityReductionStatusResponse(updated=updated, components=components)
 
 
 # ---------------------------------------------------------------------------
