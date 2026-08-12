@@ -578,3 +578,7 @@ Además, estaría bien que pudieras usar esto como el estilo principal de los co
 
 <!-- ![Inspiracion estilo](doc/inspiration2.png) -->
 <img src="doc/inspiration2.png" alt="Inspiracion estilo" width="1200">
+
+O esto:
+
+<img src="doc/inspiration3.png" alt="Inspiracion estilo" width="1200">
