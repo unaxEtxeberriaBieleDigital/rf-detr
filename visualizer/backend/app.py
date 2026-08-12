@@ -208,11 +208,13 @@ def check_dataset(path: str) -> CheckDatasetResponse:
 
     store = JobStore(path)
     status = store.get_meta("status")
+    components = store.dimensionality_reduction_components()
+    has_reduction = store.has_dimensionality_reduction()
     return CheckDatasetResponse(
         has_db=True,
         num_records=store.record_count(),
-        has_dimensionality_reduction=store.has_dimensionality_reduction(),
-        dimensionality_reduction_components=store.dimensionality_reduction_components(),
+        has_dimensionality_reduction=has_reduction,
+        dimensionality_reduction_components=components,
         status=status,
     )
 
@@ -338,6 +340,8 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         f"Loaded existing job {job_id} from '{request.dataset_path}' "
         f"({store.record_count()} records)"
     )
+    components = store.dimensionality_reduction_components()
+    has_reduction = store.has_dimensionality_reduction()
 
     return JobStatusResponse(
         id=job_id,
@@ -346,8 +350,8 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         categories=categories,
         num_images_total=job.num_images_total,
         num_images_processed=job.num_images_processed,
-        has_dimensionality_reduction=store.has_dimensionality_reduction(),
-        dimensionality_reduction_components=store.dimensionality_reduction_components(),
+        has_dimensionality_reduction=has_reduction,
+        dimensionality_reduction_components=components,
     )
 
 
@@ -359,6 +363,8 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
 @app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     job = _get_job_or_404(job_id)
+    components = job.store.dimensionality_reduction_components()
+    has_reduction = job.store.has_dimensionality_reduction()
     return JobStatusResponse(
         id=job.id,
         status=job.status,
@@ -367,8 +373,8 @@ def get_job(job_id: str) -> JobStatusResponse:
         categories=job.categories,
         num_images_total=job.num_images_total,
         num_images_processed=job.num_images_processed,
-        has_dimensionality_reduction=job.store.has_dimensionality_reduction(),
-        dimensionality_reduction_components=job.store.dimensionality_reduction_components(),
+        has_dimensionality_reduction=has_reduction,
+        dimensionality_reduction_components=components,
     )
 
 
@@ -410,6 +416,15 @@ def compute_dimensionality_reduction(
     Returns:
         :class:`DimensionalityReductionStatusResponse` with the number of updated records.
     """
+    return _compute_dimensionality_reduction(job_id=job_id, components=components, body=body)
+
+
+def _compute_dimensionality_reduction(
+    job_id: str,
+    components: int,
+    body: ReductionRequest,
+) -> DimensionalityReductionStatusResponse:
+    """Shared implementation for dimensionality-reduction endpoints."""
     job = _get_job_or_404(job_id)
     if job.status != "done":
         raise HTTPException(409, f"Job is not finished yet (status='{job.status}')")
