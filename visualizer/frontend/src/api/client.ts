@@ -1,10 +1,10 @@
 import type {
   CheckDatasetResponse,
   CreateJobRequest,
+  DimensionalityReductionStatusResponse,
   EmbeddingRecordDTO,
   ImagePathPageResponse,
   JobStatusResponse,
-  PcaStatusResponse,
   SemanticSearchStatusResponse,
 } from "../types";
 
@@ -116,9 +116,9 @@ export function computeReduction(
   algorithm: ReductionAlgorithm,
   recordIds?: string[],
   params?: { perplexity?: number; n_neighbors?: number; min_dist?: number },
-): Promise<PcaStatusResponse> {
-  return request<PcaStatusResponse>(
-    `/api/v1/jobs/${jobId}/pca?components=${components}`,
+): Promise<DimensionalityReductionStatusResponse> {
+  return request<DimensionalityReductionStatusResponse>(
+    `/api/v1/jobs/${jobId}/dimensionality_reduction?components=${components}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

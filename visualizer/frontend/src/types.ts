@@ -24,8 +24,8 @@ export interface JobStatusResponse {
   categories: Record<number, string>;
   num_images_total: number;
   num_images_processed: number;
-  has_pca: boolean;
-  pca_components: number | null;
+  has_dimensionality_reduction: boolean;
+  dimensionality_reduction_components: number | null;
 }
 
 export interface ImagePathPageResponse {
@@ -49,12 +49,12 @@ export interface CreateJobRequest {
 export interface CheckDatasetResponse {
   has_db: boolean;
   num_records: number;
-  has_pca: boolean;
-  pca_components: number | null;
+  has_dimensionality_reduction: boolean;
+  dimensionality_reduction_components: number | null;
   status: string | null;
 }
 
-export interface PcaStatusResponse {
+export interface DimensionalityReductionStatusResponse {
   updated: number;
   components: number;
 }

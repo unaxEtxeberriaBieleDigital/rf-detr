@@ -42,8 +42,11 @@ export default function VisualizerPage() {
   // Only re-run when the job changes (jobId), not on cosmetic config field updates.
   useEffect(() => {
     if (!config) return;
-    if (config.pcaComponents === 2 || config.pcaComponents === 3) {
-      setPcaDims(config.pcaComponents);
+    if (
+      config.dimensionalityReductionComponents === 2
+      || config.dimensionalityReductionComponents === 3
+    ) {
+      setPcaDims(config.dimensionalityReductionComponents);
     }
     setLoading(true);
     getAllRecords(config.jobId)
@@ -76,7 +79,11 @@ export default function VisualizerPage() {
     try {
       const ids = filteredRecords.map((r) => r.id);
       await computeReduction(config.jobId, pcaDims, algorithm, ids);
-      setConfig({ ...config, hasPca: true, pcaComponents: pcaDims });
+      setConfig({
+        ...config,
+        hasDimensionalityReduction: true,
+        dimensionalityReductionComponents: pcaDims,
+      });
       const refreshed = await getAllRecords(config.jobId);
       setRecords(refreshed);
       const refreshedIds = new Set(ids);

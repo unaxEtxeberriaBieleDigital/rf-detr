@@ -135,8 +135,8 @@ export default function SetupPage() {
           modelType,
           jobId: loaded.id,
           categories: loaded.categories,
-          hasPca: loaded.has_pca,
-          pcaComponents: loaded.pca_components,
+          hasDimensionalityReduction: loaded.has_dimensionality_reduction,
+          dimensionalityReductionComponents: loaded.dimensionality_reduction_components,
         });
         return;
       }
@@ -180,8 +180,8 @@ export default function SetupPage() {
         modelType,
         jobId: latest.id,
         categories: latest.categories,
-        hasPca: false,
-        pcaComponents: null,
+        hasDimensionalityReduction: false,
+        dimensionalityReductionComponents: null,
       });
     } catch (e) {
       setErrorMessage(String(e instanceof Error ? e.message : e));
@@ -238,9 +238,9 @@ export default function SetupPage() {
               <strong>Base de datos existente encontrada</strong>
               {" — "}
               {dbCheck.num_records.toLocaleString()} registros
-              {dbCheck.has_pca && dbCheck.pca_components
-                ? `, PCA ${dbCheck.pca_components}D calculado`
-                : ", sin PCA calculado"}
+              {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
+                ? `, reducción ${dbCheck.dimensionality_reduction_components}D calculada`
+                : ", sin reducción calculada"}
               {dbCheck.status === "error" && (
                 <span className="setup-db-warn"> (la inferencia anterior fue interrumpida)</span>
               )}

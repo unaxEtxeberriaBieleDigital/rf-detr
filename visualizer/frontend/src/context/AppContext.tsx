@@ -12,10 +12,13 @@ export interface AppConfig {
   modelType: string;
   jobId: string;
   categories: Record<number, string>;
-  /** Whether PCA has already been computed for this job. */
-  hasPca: boolean;
-  /** Number of PCA dimensions (2 or 3), or null if PCA hasn't been computed. */
-  pcaComponents: number | null;
+  /** Whether dimensionality reduction has already been computed for this job. */
+  hasDimensionalityReduction: boolean;
+  /**
+   * Number of reduced dimensions (2 or 3), or null if dimensionality
+   * reduction hasn't been computed.
+   */
+  dimensionalityReductionComponents: number | null;
 }
 
 interface AppContextValue {
