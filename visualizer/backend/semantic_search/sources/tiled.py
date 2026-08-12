@@ -33,7 +33,7 @@ from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
 from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import register_semantic_search_source
-from visualizer.backend.semantic_search.basesource import (
+from visualizer.backend.semantic_search.sources.basesource import (
     BaseSemanticSearchSource,
     ScanUnit,
     SearchResultPreview,

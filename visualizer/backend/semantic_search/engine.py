@@ -34,7 +34,7 @@ import numpy as np
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
-from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource
+from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.semantic_search.cache import SearchCache
 
 logger = get_logger()

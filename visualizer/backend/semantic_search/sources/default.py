@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
 from visualizer.backend.registry import register_semantic_search_source
-from visualizer.backend.semantic_search.basesource import (
+from visualizer.backend.semantic_search.sources.basesource import (
     BaseSemanticSearchSource,
     ScanUnit,
     SearchResultPreview,

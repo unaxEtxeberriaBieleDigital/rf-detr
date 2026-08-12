@@ -10,7 +10,7 @@ from visualizer.backend.datasets.basedataset import BaseDataset
 from visualizer.backend.models.basemodel import BaseModel
 
 if TYPE_CHECKING:
-    from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource
+    from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 
 MODEL_REGISTRY: dict[str, type[BaseModel]] = {}
 DATASET_REGISTRY: dict[str, type[BaseDataset]] = {}

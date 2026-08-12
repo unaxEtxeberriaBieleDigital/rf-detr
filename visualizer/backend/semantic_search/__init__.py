@@ -15,7 +15,7 @@ Public API re-exported here for convenience:
     * :class:`~visualizer.backend.semantic_search.basesource.ScanUnit`
 """
 
-from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource, ScanUnit
+from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource, ScanUnit
 from visualizer.backend.semantic_search.engine import (
     SEARCH_JOB_STORE,
     SearchJob,

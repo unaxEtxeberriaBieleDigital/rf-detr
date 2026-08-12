@@ -39,7 +39,7 @@ from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models import rfdetr  # noqa: F401
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
-from visualizer.backend.semantic_search.basesource import BaseSemanticSearchSource
+from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
 from visualizer.backend.store import DB_FILENAME, JobStore
 
