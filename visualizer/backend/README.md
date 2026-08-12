@@ -263,10 +263,13 @@ visualizer/backend/
 ├── embeddingrecord.py       ← Estructura de datos: un registro por detección.
 ├── prediction.py            ← Estructura de datos: bbox + confidence + class_id.
 │
+├── doc/
+│   └── ...                  ← Imágenes para el README.md de la explicación del backend
+|
 ├── models/
 │   ├── basemodel.py         ← Interfaz abstracta que cualquier modelo debe implementar.
 │   └── rfdetr.py            ← Implementación concreta para RF-DETR.
-│
+|
 ├── datasets/
 │   ├── basedataset.py       ← Interfaz abstracta para datasets. Define Split (train/val/test).
 │   └── cocodetectiondataset.py ← Dataset en formato COCO.
