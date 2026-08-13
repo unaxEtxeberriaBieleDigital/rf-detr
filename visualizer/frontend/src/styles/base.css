@@ -70,8 +70,8 @@ select:focus {
 }
 
 button {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-strong);
   padding: 0.6em 1.2em;
   color: var(--text-primary);
   background-color: var(--bg-elevated);

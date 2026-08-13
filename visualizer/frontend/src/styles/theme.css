@@ -3,11 +3,11 @@
   color-scheme: dark;
 
   --bg-app: #0b0d10;
-  --bg-surface: #12151a;
+  --bg-surface: #202020;
   --bg-surface-alt: #171b21;
-  --bg-elevated: #1c2129;
-  --bg-hover: #232933;
-  --bg-input: #171b21;
+  --bg-elevated: #1a1a1a;
+  --bg-hover: #515152;
+  --bg-input: #202020;
 
   --border-subtle: #262b33;
   --border-strong: #333a45;
@@ -15,11 +15,12 @@
   --text-primary: #eef0f3;
   --text-secondary: #9aa2ad;
   --text-muted: #6b727c;
+  --text-contrast: #020202;
 
-  --accent: #4f8cff;
-  --accent-hover: #6ea0ff;
-  --accent-soft: rgba(79, 140, 255, 0.14);
-  --accent-soft-border: rgba(79, 140, 255, 0.35);
+  --accent: #fcfcfc;
+  --accent-hover: #9b9b9b;
+  --accent-soft: #838383;
+  --accent-soft-border: rgba(44, 44, 44, 0.35);
 
   --danger: #ef5350;
   --danger-soft: rgba(239, 83, 80, 0.14);

@@ -6,6 +6,8 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import { degToRad } from 'three/src/math/MathUtils.js';
 
+import bieleLogo from '../assets/logos/biele-logo.png';
+
 import '../styles/setup.css';
 
 type UniformValue = THREE.IUniform<unknown> | unknown;
@@ -78,9 +80,12 @@ function extendMaterial<T extends THREE.Material = THREE.Material>(
 }
 
 const CanvasWrapper: FC<{ children: ReactNode }> = ({ children }) => (
-  <Canvas dpr={[1, 2]} frameloop="always" className="beams-container">
-    {children}
-  </Canvas>
+  <div className="beams-container">
+    <Canvas dpr={[1, 2]} frameloop="always" className="beams-canvas">
+      {children}
+    </Canvas>
+    <img src={bieleLogo} alt="Biele" className="beams-logo" />
+  </div>
 );
 
 const hexToNormalizedRGB = (hex: string): [number, number, number] => {

@@ -3,7 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJob } from "../api/client";
 import { useAppConfig } from "../context/AppContext";
 import type { CheckDatasetResponse } from "../types";
-import bieleDigitalVideo from "../assets/BIELE_DIGITAL.mp4";
 import Beams from "../components/SetUpBackground";
 import ParticleText from "../components/ParticleText";
 
@@ -78,7 +77,7 @@ export default function SetupPage() {
 
   const canSubmit =
     datasetPath.trim().length > 0 &&
-    (dbChoice === "load" || modelPath.trim().length > 0) &&
+    modelPath.trim().length > 0 &&
     datasetType.length > 0 &&
     modelType.length > 0 &&
     !submitting;
@@ -193,8 +192,6 @@ export default function SetupPage() {
     }
   }
 
-  const showModelFields = dbChoice !== "load";
-
   return (
     <div className="setup-page">
       <Beams
@@ -210,7 +207,7 @@ export default function SetupPage() {
       <main className="setup-container">
         <h1>
           <ParticleText
-            text="Visualizer"
+            text="Data Cleaner"
             particleSize={2.2}
             density={6}
             color="#f8fafc"
@@ -301,41 +298,37 @@ export default function SetupPage() {
           </select>
         </label>
 
-        {showModelFields && (
-          <>
-            <label className="field">
-              <span>Ruta del modelo</span>
-              <div className="path-field">
-                <input
-                  type="text"
-                  placeholder="C:\modelos\checkpoint.pth"
-                  value={modelPath}
-                  onChange={(e) => setModelPath(e.currentTarget.value)}
-                  disabled={submitting}
-                />
-                <button type="button" onClick={pickModelFile} disabled={submitting}>
-                  Seleccionar archivo
-                </button>
-              </div>
-            </label>
+        <label className="field">
+          <span>Ruta del modelo</span>
+          <div className="path-field">
+            <input
+              type="text"
+              placeholder="C:\modelos\checkpoint.pth"
+              value={modelPath}
+              onChange={(e) => setModelPath(e.currentTarget.value)}
+              disabled={submitting}
+            />
+            <button type="button" onClick={pickModelFile} disabled={submitting}>
+              Seleccionar archivo
+            </button>
+          </div>
+        </label>
 
-            <label className="field">
-              <span>Tipo de modelo</span>
-              <select
-                value={modelType}
-                onChange={(e) => setModelType(e.currentTarget.value)}
-                disabled={submitting}
-              >
-                {modelTypes.length === 0 && <option value="">Cargando...</option>}
-                {modelTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        )}
+        <label className="field">
+          <span>Tipo de modelo</span>
+          <select
+            value={modelType}
+            onChange={(e) => setModelType(e.currentTarget.value)}
+            disabled={submitting}
+          >
+            {modelTypes.length === 0 && <option value="">Cargando...</option>}
+            {modelTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <button type="submit" disabled={!canSubmit}>
           {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : "Visualizar"}
