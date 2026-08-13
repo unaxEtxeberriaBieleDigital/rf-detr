@@ -4,6 +4,8 @@ import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJo
 import { useAppConfig } from "../context/AppContext";
 import type { CheckDatasetResponse } from "../types";
 import bieleDigitalVideo from "../assets/BIELE_DIGITAL.mp4";
+import Beams from "../components/SetUpBackground";
+import ParticleText from "../components/ParticleText";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -195,16 +197,37 @@ export default function SetupPage() {
 
   return (
     <div className="setup-page">
-      <video
-        className="setup-video-bg"
-        src={bieleDigitalVideo}
-        autoPlay
-        muted
-        loop
-        playsInline
+      <Beams
+        beamWidth={3}
+        beamHeight={30}
+        beamNumber={20}
+        lightColor="#ffffff"
+        speed={2}
+        noiseIntensity={1.75}
+        scale={0.2}
+        rotation={30}
       />
       <main className="setup-container">
-        <h1>RF-DETR Visualizer</h1>
+        <h1>
+          <ParticleText
+            text="Visualizer"
+            particleSize={2.2}
+            density={6}
+            color="#f8fafc"
+            highlightColor="#474649"
+            scatter={190}
+            gatherDuration={1600}
+            stagger={420}
+            pointerRepel={42}
+            repelRadius={120}
+            idleDrift={0.8}
+            trigger="mount"
+            fontSize="clamp(3.5rem, 13vw, 9rem)"
+            fontWeight={800}
+            fontFamily="inherit"
+            glow
+          />
+        </h1>
         <p className="setup-subtitle">
           Introduce el dataset y el modelo que quieres investigar. Se calcularán los embeddings y las predicciones
           antes de pasar a la visualización.
