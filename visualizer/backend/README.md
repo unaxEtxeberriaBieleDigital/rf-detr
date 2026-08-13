@@ -536,7 +536,7 @@ El resto del sistema (evaluación, PCA, búsqueda, API) funcionará automáticam
 
 Primero expondré el orden en el que quiero que se haga cada cosa. Luego, prepararé un apartado explicando en profundidad lo que quiero que se haga. Si mientras estás implementando alguno de estos puntos, te das cuenta que la aplicación tiene algún tipo de bug o alguna posible mejora, puedes parar lo que estás haciendo y centrarte en arreglar lo otro (si quieres).
 
-1. Preparar bien la búsqueda semántica.
+1. Preparar bien la búsqueda semántica. Ejecutar búsqueda semántica de prueba en el servidor de Jeld-Wen.
 1. Hacer que la experiencia de usuario sea agradable, para que los clientes puedan usarlo: Mejorar la interfaz gráfica. Hacer que sea más rápido. Añadir explicaciones e información para que todo sea más fácil de entender,...
 1. Si terminas de hacer estas dos cosas, pégame un toque y veremos si merece la pena hacer algo más o no. Aunque los dos primeros puntos ya son bastante trabajo para dos semanas, creo yo. [Evaluación de modelos, buscar umbral óptimo por clase, ...]
 
@@ -570,6 +570,10 @@ En ambos ordenadores, las imágenes se guardan en la ruta `E:\Images for Labelli
 **Situación actual con la búsqueda semántica**
 
 Ahora mismo creo que la búsqueda semántica funciona, pero es muy lenta. El flujo esta explicado en el apartado [10](#10-búsqueda-semántica--semantic_search). El tipo de DataSource es tiled y está implementado en `tiled.py`. Es tiled, porque para hacer inferencias, tenemos que dividir primero la imagen en tiles y luego hacer inferencias con esos tiles. La generación del iterator es muy lenta con muchas imágenes y tiles, así que si pudiera haber una forma de agilizar eso estaría muy bien. Por otro lado, estaría muy bien también si aparte del progreso, se pudieran ver en tiempo real los candidatos actuales, y como van cambiando. Así la espera se hace más amena y al menos se puede ver que el backend está funcionando. 
+
+**Probar la búsqueda semántica en el servidor de Jeld-Wen**
+
+Comprueba que la búsqueda semántica funciona en el servidor maestro de Jeld-Wen. Usa el TiledDataSource en la carpeta `E:\Images for Labelling\Left` con el dataset `C:\training_dataset` y el modelo `E:\rf-detr_training\trainings\lat1_large.pth`.
 
 ### Mejorar la experiencia de usuario
 
