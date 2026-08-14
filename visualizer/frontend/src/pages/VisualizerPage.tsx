@@ -26,6 +26,7 @@ export default function VisualizerPage() {
   );
 
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Dimensionality-reduction panel state
   const [pcaDims, setPcaDims] = useState<2 | 3>(2);
@@ -120,116 +121,55 @@ export default function VisualizerPage() {
     return sample?.embedding?.length ?? null;
   }, [plotRecords]);
 
-  const ALGO_LABELS: Record<ReductionAlgorithm, string> = {
-    pca: "PCA",
-    tsne: "t-SNE",
-    umap: "UMAP",
-  };
-
   if (!config) return null;
 
   return (
     <div className="visualizer-container">
-      <header className="visualizer-header">
-        <div>
-          <h1>RF-DETR Visualizer</h1>
-          <p className="visualizer-subtitle">
-            Dataset: <code>{config.datasetPath}</code> · Modelo: <code>{config.modelPath}</code>
-          </p>
-        </div>
-        <div className="visualizer-header-right">
-          {/* Dimensionality-reduction panel */}
-          <div className="pca-panel">
-            <span className="pca-panel-label">
-              {activePcaDims ? `${ALGO_LABELS[algorithm]} ${activePcaDims}D` : "Sin proyección"}
-            </span>
-
-            {/* Algorithm selector */}
-            <fieldset className="pca-dims" disabled={reductionRunning}>
-              <legend>Algoritmo</legend>
-              {(["pca", "tsne", "umap"] as ReductionAlgorithm[]).map((a) => (
-                <label key={a} title={
-                  a === "tsne"
-                    ? "t-SNE: carga todos los embeddings en RAM. Recomendado solo en subsets filtrados (<100k)."
-                    : a === "umap"
-                    ? "UMAP: más rápido que t-SNE. Requiere umap-learn. Escala hasta ~500k."
-                    : "PCA: incremental, sin límite de RAM."
-                }>
-                  <input
-                    type="radio"
-                    name="algorithm"
-                    checked={algorithm === a}
-                    onChange={() => setAlgorithm(a)}
-                  />
-                  {` ${ALGO_LABELS[a]}`}
-                </label>
-              ))}
-            </fieldset>
-
-            {/* Dimensions */}
-            <fieldset className="pca-dims" disabled={reductionRunning || algorithm === "tsne"}>
-              <legend>Dims</legend>
-              <label>
-                <input type="radio" name="pcaDims" checked={pcaDims === 2} onChange={() => setPcaDims(2)} />
-                {" 2D"}
-              </label>
-              <label>
-                <input type="radio" name="pcaDims" checked={pcaDims === 3} onChange={() => setPcaDims(3)} />
-                {" 3D"}
-              </label>
-            </fieldset>
-
-            <button
-              type="button"
-              className="pca-btn"
-              onClick={handleComputeReduction}
-              disabled={reductionRunning}
-            >
-              {reductionRunning
-                ? "Calculando..."
-                : activePcaDims
-                ? "Recalcular"
-                : "Calcular"}
-            </button>
-            {reductionError && <span className="pca-error">{reductionError}</span>}
-
-            {clusterSelection && (
-              <button
-                type="button"
-                className="pca-btn pca-btn-clear"
-                onClick={() => setClusterSelection(null)}
-                title="Borrar selección del gráfico"
-              >
-                ✕ Selección ({clusterSelection.size})
-              </button>
-            )}
-          </div>
-
-          <button className="secondary" onClick={reset}>
-            Nueva investigación
-          </button>
-        </div>
-      </header>
-
-      {loading && 
-        <LoadingDiv />
-      }
-      {error && <p className="setup-error">{error}</p>}
-
-      {!loading && !error && (
-        <div className="visualizer-main">
+      {/* ── Collapsible sidebar ── */}
+      <aside className={`visualizer-sidebar${sidebarOpen ? " visualizer-sidebar--open" : ""}`}>
+        <div className="visualizer-sidebar-content">
           <FilterSidebar
             records={records}
             categories={config.categories}
             filters={filters}
             onChange={(next) => {
               setFilters(next);
-              // Clear cluster selection when sidebar filters change so the
-              // gallery doesn't show an empty state confusingly.
               setClusterSelection(null);
             }}
           />
+        </div>
+      </aside>
 
+      {/* ── Main area ── */}
+      <div className={`visualizer-main-wrapper${sidebarOpen ? " visualizer-main-wrapper--shifted" : ""}`}>
+        <header className="visualizer-header">
+          <div className="visualizer-header-left">
+            <button
+              type="button"
+              className="visualizer-sidebar-toggle"
+              onClick={() => setSidebarOpen((v) => !v)}
+              title={sidebarOpen ? "Cerrar filtros" : "Abrir filtros"}
+            >
+              ☰
+            </button>
+            <div>
+              <h1>RF-DETR Visualizer</h1>
+              <p className="visualizer-subtitle">
+                Dataset: <code>{config.datasetPath}</code> · Modelo: <code>{config.modelPath}</code>
+              </p>
+            </div>
+          </div>
+          <div className="visualizer-header-right">
+            <button className="secondary" onClick={reset}>
+              Nueva investigación
+            </button>
+          </div>
+        </header>
+
+        {loading && <LoadingDiv />}
+        {error && <p className="setup-error">{error}</p>}
+
+        {!loading && !error && (
           <div className="visualizer-content">
             <div className="visualizer-record-count">
               {filteredRecords.length.toLocaleString()} de {records.length.toLocaleString()} registros
@@ -268,6 +208,15 @@ export default function VisualizerPage() {
                   clusterSelection={clusterSelection}
                   onSelectRecord={setSelectedRecordId}
                   onClusterSelectionChange={setClusterSelection}
+                  activePcaDims={activePcaDims}
+                  algorithm={algorithm}
+                  pcaDims={pcaDims}
+                  reductionRunning={reductionRunning}
+                  reductionError={reductionError}
+                  onAlgorithmChange={setAlgorithm}
+                  onPcaDimsChange={setPcaDims}
+                  onComputeReduction={handleComputeReduction}
+                  onClearClusterSelection={() => setClusterSelection(null)}
                 />
               </section>
 
@@ -282,8 +231,8 @@ export default function VisualizerPage() {
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <ImageViewerModal
         isOpen={!!openResult}

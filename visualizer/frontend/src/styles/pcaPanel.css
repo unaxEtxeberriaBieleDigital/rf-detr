@@ -1,4 +1,16 @@
-/* ── PCA panel (in header) ── */
+/* ── PCA panel (embedded in EmbeddingPlot) ── */
+.embedding-plot-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.embedding-plot-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
 .pca-panel {
   display: flex;
   align-items: center;

@@ -3,7 +3,10 @@ import { useMemo } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import type { Data } from "plotly.js";
 import type { EmbeddingRecordDTO } from "../types";
+import type { ReductionAlgorithm } from "../api/client";
 import Beams from "./DefaultBackground";
+import "../styles/pcaPanel.css";
+import LoadingDiv from "./LoadingDiv";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -34,6 +37,16 @@ interface EmbeddingPlotProps {
   /** Called with the new selection set after a lasso/box selection,
    *  or null when the user clears the selection. */
   onClusterSelectionChange: (selection: Set<string> | null) => void;
+  // ── PCA panel props ──
+  activePcaDims: number | null;
+  algorithm: ReductionAlgorithm;
+  pcaDims: 2 | 3;
+  reductionRunning: boolean;
+  reductionError: string | null;
+  onAlgorithmChange: (a: ReductionAlgorithm) => void;
+  onPcaDimsChange: (d: 2 | 3) => void;
+  onComputeReduction: () => void;
+  onClearClusterSelection: () => void;
 }
 
 /** Renders the already-reduced embeddings as an interactive 2D/3D scatter plot.
@@ -52,6 +65,15 @@ export default function EmbeddingPlot({
   clusterSelection,
   onSelectRecord,
   onClusterSelectionChange,
+  activePcaDims,
+  algorithm,
+  pcaDims,
+  reductionRunning,
+  reductionError,
+  onAlgorithmChange,
+  onPcaDimsChange,
+  onComputeReduction,
+  onClearClusterSelection,
 }: EmbeddingPlotProps) {
   function resolveClassId(record: EmbeddingRecordDTO): number | null {
     if (record.ground_truth) return record.ground_truth.class_id;
@@ -205,58 +227,128 @@ export default function EmbeddingPlot({
     );
   }
 
-  return (
-    // key forces a full remount when switching between 2D and 3D because the trace
-    // type changes (scattergl ↔ scatter3d) and Plotly cannot morph between them in-place.
-    <Plot
-      key={`plot-${dimensions}`}
-      data={traces}
-      layout={{
-        autosize: true,
-        paper_bgcolor: "transparent",
-        plot_bgcolor: "transparent",
-        margin: { l: 0, r: 0, t: 0, b: 0 },
-        legend: { orientation: "h" },
-        uirevision: `dims-${dimensions}`,
-        dragmode: dimensions === 2? "pan" : "orbital rotation",
+  const ALGO_LABELS: Record<ReductionAlgorithm, string> = {
+    pca: "PCA",
+    tsne: "t-SNE",
+    umap: "UMAP",
+  };
 
-        ...(dimensions === 2
-          ? {
-              xaxis: { visible: false },
-              yaxis: { visible: false },
+  const pcaPanel = (
+    <div className="pca-panel">
+      <span className="pca-panel-label">
+        {activePcaDims ? `${ALGO_LABELS[algorithm]} ${activePcaDims}D` : "Sin proyección"}
+      </span>
+
+      <fieldset className="pca-dims" disabled={reductionRunning}>
+        <legend>Algoritmo</legend>
+        {(["pca", "tsne", "umap"] as ReductionAlgorithm[]).map((a) => (
+          <label
+            key={a}
+            title={
+              a === "tsne"
+                ? "t-SNE: carga todos los embeddings en RAM. Recomendado solo en subsets filtrados (<100k)."
+                : a === "umap"
+                ? "UMAP: más rápido que t-SNE. Requiere umap-learn. Escala hasta ~500k."
+                : "PCA: incremental, sin límite de RAM."
             }
-          : {
-              scene: {
-                xaxis: { visible: false },
-                yaxis: { visible: false },
-                zaxis: { visible: false },
-              },
-            }),
-      }}
-      style={{ width: "100%", height: "100%" }}
-      useResizeHandler
-      config={{
-        displaylogo: false,
-        responsive: true,
-        // Show lasso and box-select tools in the mode bar.
-        modeBarButtonsToAdd: ["lasso2d"] as unknown as Plotly.ModeBarDefaultButtons[],
-      }}
-      onClick={(event) => {
-        const point = event.points?.[0];
-        const recordId = (point as unknown as { customdata?: string })?.customdata;
-        if (recordId) onSelectRecord(recordId);
-      }}
-      onSelected={(event) => {
-        if (!event || event.points.length === 0) {
-          onClusterSelectionChange(null);
-          return;
-        }
-        const ids = event.points.map(
-          (p: unknown) => ((p as { customdata?: string }).customdata) ?? "",
-        ).filter(Boolean);
-        onClusterSelectionChange(new Set(ids));
-      }}
-      onDeselect={() => onClusterSelectionChange(null)}
-    />
+          >
+            <input
+              type="radio"
+              name="algorithm"
+              checked={algorithm === a}
+              onChange={() => onAlgorithmChange(a)}
+            />
+            {` ${ALGO_LABELS[a]}`}
+          </label>
+        ))}
+      </fieldset>
+
+      <fieldset className="pca-dims" disabled={reductionRunning || algorithm === "tsne"}>
+        <legend>Dims</legend>
+        <label>
+          <input type="radio" name="pcaDims" checked={pcaDims === 2} onChange={() => onPcaDimsChange(2)} />
+          {" 2D"}
+        </label>
+        <label>
+          <input type="radio" name="pcaDims" checked={pcaDims === 3} onChange={() => onPcaDimsChange(3)} />
+          {" 3D"}
+        </label>
+      </fieldset>
+
+      <button
+        type="button"
+        className="pca-btn"
+        onClick={onComputeReduction}
+        disabled={reductionRunning}
+      >
+        {reductionRunning ? "Calculando..." : activePcaDims ? "Recalcular" : "Calcular"}
+      </button>
+      {reductionError && <span className="pca-error">{reductionError}</span>}
+
+      {clusterSelection && (
+        <button
+          type="button"
+          className="pca-btn pca-btn-clear"
+          onClick={onClearClusterSelection}
+          title="Borrar selección del gráfico"
+        >
+          ✕ Selección ({clusterSelection.size})
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="embedding-plot-wrapper">
+      {pcaPanel}
+      {/* key forces a full remount when switching between 2D and 3D because the trace
+          type changes (scattergl ↔ scatter3d) and Plotly cannot morph between them in-place. */}
+      {reductionRunning? (
+        <LoadingDiv />
+      ):(
+        <div className="embedding-plot-canvas">
+          <Plot
+            key={`plot-${dimensions}`}
+            data={traces}
+            layout={{
+              autosize: true,
+              paper_bgcolor: "transparent",
+              plot_bgcolor: "transparent",
+              margin: { l: 0, r: 0, t: 0, b: 0 },
+              legend: { orientation: "h" },
+              uirevision: `dims-${dimensions}`,
+              dragmode: dimensions === 2 ? "pan" : "orbital rotation",
+              ...(dimensions === 2
+                ? { xaxis: { visible: false }, yaxis: { visible: false } }
+                : { scene: { xaxis: { visible: false }, yaxis: { visible: false }, zaxis: { visible: false } } }),
+            }}
+            style={{ width: "100%", height: "100%" }}
+            useResizeHandler
+            config={{
+              displaylogo: false,
+              responsive: true,
+              modeBarButtonsToAdd: ["lasso2d"] as unknown as Plotly.ModeBarDefaultButtons[],
+            }}
+            onClick={(event) => {
+              const point = event.points?.[0];
+              const recordId = (point as unknown as { customdata?: string })?.customdata;
+              if (recordId) onSelectRecord(recordId);
+            }}
+            onSelected={(event) => {
+              if (!event || event.points.length === 0) {
+                onClusterSelectionChange(null);
+                return;
+              }
+              const ids = event.points
+                .map((p: unknown) => ((p as { customdata?: string }).customdata) ?? "")
+                .filter(Boolean);
+              onClusterSelectionChange(new Set(ids));
+            }}
+            onDeselect={() => onClusterSelectionChange(null)}
+          />
+        </div>
+      )}
+      
+    </div>
   );
 }
