@@ -5,6 +5,7 @@ import type { Data } from "plotly.js";
 import type { EmbeddingRecordDTO } from "../types";
 import type { ReductionAlgorithm } from "../api/client";
 import Beams from "./DefaultBackground";
+import SegmentedControl from "./SegmentedControl";
 import "../styles/pcaPanel.css";
 import LoadingDiv from "./LoadingDiv";
 
@@ -263,17 +264,15 @@ export default function EmbeddingPlot({
         ))}
       </fieldset>
 
-      <fieldset className="pca-dims" disabled={reductionRunning || algorithm === "tsne"}>
-        <legend>Dims</legend>
-        <label>
-          <input type="radio" name="pcaDims" checked={pcaDims === 2} onChange={() => onPcaDimsChange(2)} />
-          {" 2D"}
-        </label>
-        <label>
-          <input type="radio" name="pcaDims" checked={pcaDims === 3} onChange={() => onPcaDimsChange(3)} />
-          {" 3D"}
-        </label>
-      </fieldset>
+      <SegmentedControl
+        options={[
+          { value: 2, label: "2D" },
+          { value: 3, label: "3D" },
+        ]}
+        value={pcaDims}
+        onChange={onPcaDimsChange}
+        disabled={reductionRunning || algorithm === "tsne"}
+      />
 
       <button
         type="button"

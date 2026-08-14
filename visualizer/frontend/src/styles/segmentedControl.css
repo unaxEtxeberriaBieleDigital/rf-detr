@@ -1,0 +1,36 @@
+/* ── SegmentedControl ── */
+.seg-ctrl {
+  display: flex;
+  border: 2px solid #fff;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.seg-ctrl__btn {
+  flex: 1;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: #000;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.seg-ctrl__btn--active {
+  background: #fff;
+  color: #000;
+}
+
+.seg-ctrl__btn:not(.seg-ctrl__btn--active):hover:not(:disabled) {
+  background: #1a1a1a;
+  color: var(--text-secondary);
+}
+
+.seg-ctrl__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

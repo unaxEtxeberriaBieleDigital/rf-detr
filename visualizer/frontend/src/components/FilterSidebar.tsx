@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
+import SegmentedControl from "./SegmentedControl";
 import bieleLogo from "../assets/logos/biele-logo.png"
 
 // -----------------------------------------------------------------------
@@ -210,14 +211,6 @@ export default function FilterSidebar({
     onChange({ ...filters, qualities: next });
   }
 
-  function toggleAllQualities() {
-    if (filters.qualities.size === 0) {
-      onChange({ ...filters, qualities: new Set<PredQuality>(ALL_QUALITIES) });
-    } else {
-      onChange({ ...filters, qualities: new Set<PredQuality>() });
-    }
-  }
-
   function setGlobalConfidence(value: number) {
     onChange({ ...filters, minConfidence: value });
   }
@@ -237,23 +230,11 @@ export default function FilterSidebar({
     onChange({ ...filters, visibleClasses: next });
   }
 
-  function selectAllClasses() {
-    onChange({ ...filters, visibleClasses: new Set<number>() });
-  }
-
-  function deselectAllClasses() {
-    onChange({ ...filters, visibleClasses: new Set<number>(availableClasses) });
-  }
-
   function toggleSplit(split: string) {
     const next = new Set(filters.visibleSplits);
     if (next.has(split)) next.delete(split);
     else next.add(split);
     onChange({ ...filters, visibleSplits: next });
-  }
-
-  function selectAllSplits() {
-    onChange({ ...filters, visibleSplits: new Set<string>() });
   }
 
   const activeFilterCount =
@@ -306,20 +287,14 @@ export default function FilterSidebar({
       {/* ── Confidence ── */}
       <Section title="Confianza">
         <div className="conf-type-selector">
-          <button
-            type="button"
-            className={confMode === "global" ? "conf-type-btn conf-type-btn--active" : "conf-type-btn"}
-            onClick={() => setConfMode("global")}
-          >
-            Global
-          </button>
-          <button
-            type="button"
-            className={confMode === "perclass" ? "conf-type-btn conf-type-btn--active" : "conf-type-btn"}
-            onClick={() => setConfMode("perclass")}
-          >
-            Por clase
-          </button>
+          <SegmentedControl
+            options={[
+              { value: "global", label: "Global" },
+              { value: "perclass", label: "Por clase" },
+            ]}
+            value={confMode}
+            onChange={setConfMode}
+          />
         </div>
 
         {confMode === "global" && (

@@ -73,33 +73,7 @@
 /* ── Confidence mode toggle ── */
 .conf-type-selector {
   display: flex;
-  background-color: #000;
-  border: 1px solid #fff;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
   flex-shrink: 0;
-}
-
-.conf-type-btn {
-  flex: 1;
-  padding: 0.3rem 0;
-  font-size: 0.78rem;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  background: #000;
-  color: var(--text-muted);
-  transition: background 0.15s, color 0.15s;
-}
-
-.conf-type-btn--active {
-  background: #fff;
-  color: #000;
-}
-
-.conf-type-btn:not(.conf-type-btn--active):hover {
-  background: #1a1a1a;
-  color: var(--text-secondary);
 }
 
 .fsb-link {

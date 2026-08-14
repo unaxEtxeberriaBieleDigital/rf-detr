@@ -16,9 +16,7 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0.65rem;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-soft-border);
-  border-radius: var(--radius-md);
+  background: transparent;
   flex-wrap: nowrap;
 }
 
