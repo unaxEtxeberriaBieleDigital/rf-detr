@@ -10,8 +10,6 @@ export default function LoadingDiv( ) {
             justifyContent: "center",
             height: "100%",
             width: "100%",
-            color: "#ff0000",
-            fontSize: "0.9rem",
             textAlign: "center",
         }}
     >

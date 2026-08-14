@@ -538,7 +538,8 @@ Primero expondré el orden en el que quiero que se haga cada cosa. Luego, prepar
 
 1. Preparar bien la búsqueda semántica. Ejecutar búsqueda semántica de prueba en el servidor de Jeld-Wen.
 1. Hacer que la experiencia de usuario sea agradable, para que los clientes puedan usarlo: Mejorar la interfaz gráfica. Hacer que sea más rápido. Añadir explicaciones e información para que todo sea más fácil de entender,...
-1. Si terminas de hacer estas dos cosas, pégame un toque y veremos si merece la pena hacer algo más o no. Aunque los dos primeros puntos ya son bastante trabajo para dos semanas, creo yo. [Evaluación de modelos, buscar umbral óptimo por clase, ...]
+1. Empaquetalo todo en una aplicación para que se ejecute con un click, en vez de tener que estar ejecutándolo desde código fuente en los servidores de Jeld-Wen.
+1. Si terminas de hacer todo esto, pégame un toque y veremos si merece la pena hacer algo más o no. Aunque los dos primeros puntos ya son bastante trabajo para dos semanas, creo yo. [Evaluación de modelos, buscar umbral óptimo por clase, ...]
 
 ### Preparar bien la búsqueda semántica
 
@@ -575,6 +576,10 @@ Ahora mismo creo que la búsqueda semántica funciona, pero es muy lenta. El flu
 
 Comprueba que la búsqueda semántica funciona en el servidor maestro de Jeld-Wen. Usa el TiledDataSource en la carpeta `E:\Images for Labelling\Left` con el dataset `C:\training_dataset` y el modelo `E:\rf-detr_training\trainings\lat1_large.pth`.
 
+**Actualización en vivo de la búsqueda**
+
+En vez de estar esperando a que termine del todo la búsqueda para ver los resultados, estaría bien que enseñase siempre el las imágenes más parecidas hasta el momento. De esta manera, al menos el usuario puede ver lo que está pasando y recibe un poco de input, en vez de estar esperando hasta que se haga todo (que puede ser un buen rato).
+
 ### Mejorar la experiencia de usuario
 
 Si ves que algo es difícil de entender o es muy lento o lo que sea, algo que le pueda molestar al usuario, intenta corregirlo. Además, intenta mejorar la interfaz gráfica. Intenta hacerla más atractiva. Te dejo como inspiración del layout la siguiente imagen:
@@ -589,3 +594,9 @@ Además, estaría bien que pudieras usar esto como el estilo principal de los co
 O esto:
 
 <img src="doc/inspiration3.png" alt="Inspiracion estilo" width="1200">
+
+Intenta, además, ponerle a la aplicación el icono de Biele, que está en `visualizer\frontend\src\assets\B-Bg.png`. Tanto en la parte de arriba a la izquierda de la aplicación, como el icono que aparece en la barra de tareas de Windows. 
+
+### Empaquetar la aplicación
+
+Primero tendrás que empaquetar la aplicación del backend y luego la unión entre el frontend y el backend. Puede que el ejecutable del backend sea enorme, ya que usamos librerías de IA como pytorch, que son como 2GB, pero es lo que hay. 
