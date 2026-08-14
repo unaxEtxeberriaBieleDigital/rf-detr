@@ -207,11 +207,11 @@ export default function SetupPage() {
       <main className="setup-container">
         <h1>
           <ParticleText
-            text="Data Cleaner"
+            text="Model tweaker"
             particleSize={2.2}
             density={6}
-            color="#f8fafc"
-            highlightColor="#474649"
+            color="#fcfcfc"
+            highlightColor="#7a7a7a"
             scatter={190}
             gatherDuration={1600}
             stagger={420}
@@ -230,117 +230,119 @@ export default function SetupPage() {
           antes de pasar a la visualización.
         </p>
 
-        <form className="setup-form" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Ruta del dataset</span>
-          <div className="path-field">
-            <input
-              type="text"
-              placeholder="C:\datasets\mi-dataset"
-              value={datasetPath}
-              onChange={(e) => setDatasetPath(e.currentTarget.value)}
-              onBlur={(e) => handleDatasetPathCommit(e.currentTarget.value)}
-              disabled={submitting}
-            />
-            <button type="button" onClick={pickDatasetDirectory} disabled={submitting}>
-              Seleccionar carpeta
-            </button>
-          </div>
-        </label>
-
-        {/* DB detection banner */}
-        {dbCheckLoading && (
-          <p className="setup-db-checking">Comprobando base de datos existente...</p>
-        )}
-        {dbCheck?.has_db && !dbCheckLoading && (
-          <div className="setup-db-banner">
-            <p className="setup-db-found">
-              <strong>Base de datos existente encontrada</strong>
-              {" — "}
-              {dbCheck.num_records.toLocaleString()} registros
-              {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
-                ? `, reducción ${dbCheck.dimensionality_reduction_components}D calculada`
-                : ", sin reducción calculada"}
-              {dbCheck.status === "error" && (
-                <span className="setup-db-warn"> (la inferencia anterior fue interrumpida)</span>
-              )}
-            </p>
-            <div className="setup-db-actions">
-              <button
-                type="button"
-                className={`setup-db-btn ${dbChoice === "load" ? "setup-db-btn-active" : ""}`}
-                onClick={() => setDbChoice("load")}
-                disabled={submitting || dbCheck.status === "error"}
-              >
-                Cargar existente
-              </button>
-              <button
-                type="button"
-                className={`setup-db-btn ${dbChoice === "recalculate" ? "setup-db-btn-active" : ""}`}
-                onClick={() => setDbChoice("recalculate")}
+        {progressFraction == null? (<form className="setup-form" onSubmit={handleSubmit}>
+          <label className="field">
+            <span>Ruta del dataset</span>
+            <div className="path-field">
+              <input
+                type="text"
+                placeholder="C:\datasets\mi-dataset"
+                value={datasetPath}
+                onChange={(e) => setDatasetPath(e.currentTarget.value)}
+                onBlur={(e) => handleDatasetPathCommit(e.currentTarget.value)}
                 disabled={submitting}
-              >
-                Recalcular (sobreescribir)
+              />
+              <button type="button" onClick={pickDatasetDirectory} disabled={submitting}>
+                Seleccionar carpeta
               </button>
             </div>
-          </div>
-        )}
+          </label>
 
-        <label className="field">
-          <span>Tipo de dataset</span>
-          <select value={datasetType} onChange={(e) => setDatasetType(e.currentTarget.value)} disabled={submitting}>
-            {datasetTypes.length === 0 && <option value="">Cargando...</option>}
-            {datasetTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
+          {/* DB detection banner */}
+          {dbCheckLoading && (
+            <p className="setup-db-checking">Comprobando base de datos existente...</p>
+          )}
+          {dbCheck?.has_db && !dbCheckLoading && (
+            <div className="setup-db-banner">
+              <p className="setup-db-found">
+                <strong>Base de datos existente encontrada</strong>
+                {" — "}
+                {dbCheck.num_records.toLocaleString()} registros
+                {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
+                  ? `, reducción ${dbCheck.dimensionality_reduction_components}D calculada`
+                  : ", sin reducción calculada"}
+                {dbCheck.status === "error" && (
+                  <span className="setup-db-warn"> (la inferencia anterior fue interrumpida)</span>
+                )}
+              </p>
+              <div className="setup-db-actions">
+                <button
+                  type="button"
+                  className={`setup-db-btn ${dbChoice === "load" ? "setup-db-btn-active" : ""}`}
+                  onClick={() => setDbChoice("load")}
+                  disabled={submitting || dbCheck.status === "error"}
+                >
+                  Cargar existente
+                </button>
+                <button
+                  type="button"
+                  className={`setup-db-btn ${dbChoice === "recalculate" ? "setup-db-btn-active" : ""}`}
+                  onClick={() => setDbChoice("recalculate")}
+                  disabled={submitting}
+                >
+                  Recalcular (sobreescribir)
+                </button>
+              </div>
+            </div>
+          )}
 
-        <label className="field">
-          <span>Ruta del modelo</span>
-          <div className="path-field">
-            <input
-              type="text"
-              placeholder="C:\modelos\checkpoint.pth"
-              value={modelPath}
-              onChange={(e) => setModelPath(e.currentTarget.value)}
+          <label className="field">
+            <span>Tipo de dataset</span>
+            <select value={datasetType} onChange={(e) => setDatasetType(e.currentTarget.value)} disabled={submitting}>
+              {datasetTypes.length === 0 && <option value="">Cargando...</option>}
+              {datasetTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Ruta del modelo</span>
+            <div className="path-field">
+              <input
+                type="text"
+                placeholder="C:\modelos\checkpoint.pth"
+                value={modelPath}
+                onChange={(e) => setModelPath(e.currentTarget.value)}
+                disabled={submitting}
+              />
+              <button type="button" onClick={pickModelFile} disabled={submitting}>
+                Seleccionar archivo
+              </button>
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Tipo de modelo</span>
+            <select
+              value={modelType}
+              onChange={(e) => setModelType(e.currentTarget.value)}
               disabled={submitting}
-            />
-            <button type="button" onClick={pickModelFile} disabled={submitting}>
-              Seleccionar archivo
-            </button>
-          </div>
-        </label>
+            >
+              {modelTypes.length === 0 && <option value="">Cargando...</option>}
+              {modelTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="field">
-          <span>Tipo de modelo</span>
-          <select
-            value={modelType}
-            onChange={(e) => setModelType(e.currentTarget.value)}
-            disabled={submitting}
-          >
-            {modelTypes.length === 0 && <option value="">Cargando...</option>}
-            {modelTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button type="submit" disabled={!canSubmit}>
-          {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : "Visualizar"}
-        </button>
-      </form>
-
-      {statusMessage && <p className="setup-status">{statusMessage}</p>}
-      {progressFraction !== null && (
-        <div className="progress-bar" role="progressbar" aria-valuenow={Math.round(progressFraction * 100)}>
-          <div className="progress-bar-fill" style={{ width: `${Math.min(progressFraction, 1) * 100}%` }} />
-        </div>
+          <button type="submit" disabled={!canSubmit}>
+            {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : "Visualizar"}
+          </button>
+        </form>
+        ):(
+          <>
+          <p className="setup-status">{statusMessage}</p>
+            <div className="progress-bar" role="progressbar" aria-valuenow={Math.round(progressFraction * 100)}>
+              <div className="progress-bar-fill" style={{ width: `${Math.min(progressFraction, 1) * 100}%` }} />
+            </div>
+          </>
       )}
+
         {errorMessage && <p className="setup-error">{errorMessage}</p>}
       </main>
     </div>

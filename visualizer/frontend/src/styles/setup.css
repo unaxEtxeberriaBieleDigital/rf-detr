@@ -186,8 +186,8 @@ fieldset.field {
 
 .progress-bar {
   margin-top: 0.75rem;
-  height: 8px;
-  border-radius: 4px;
+  height: 16px;
+  border-radius: 8px;
   background: var(--bg-elevated);
   overflow: hidden;
 }
@@ -196,6 +196,7 @@ fieldset.field {
   height: 100%;
   background: var(--accent);
   transition: width 0.3s ease;
+  border-radius: 8px;
 }
 
 /* --- DB detection banner --- */

@@ -6,33 +6,20 @@ import type { EmbeddingRecordDTO } from "../types";
 
 const Plot = createPlotlyComponent(Plotly);
 
-const CLASS_COLORS = [
-  "#1f77b4",
-  "#ff7f0e",
-  "#2ca02c",
-  "#d62728",
-  "#9467bd",
-  "#8c564b",
-  "#e377c2",
-  "#7f7f7f",
-  "#bcbd22",
-  "#17becf",
-];
-
 // Marker symbol per prediction-quality status.
 // 2D (scattergl) supports a richer symbol vocabulary than 3D (scatter3d).
 const STATUS_SYMBOL_2D: Record<string, string> = {
   tp: "circle",
   fp: "x",
   fn: "diamond",
-  misclassified: "triangle-up",
+  misclassified: "square",
 };
 
 const STATUS_SYMBOL_3D: Record<string, string> = {
   tp: "circle",
   fp: "x",
   fn: "diamond",
-  misclassified: "cross",
+  misclassified: "square",
 };
 
 interface EmbeddingPlotProps {
@@ -156,7 +143,7 @@ export default function EmbeddingPlot({
         symbol: symbols,
         line: {
           width: groupRecords.map((r) => (r.id === selectedRecordId ? 2 : 0)),
-          color: "#000",
+          color: "#f3efef00",
         },
       };
 
@@ -202,12 +189,24 @@ export default function EmbeddingPlot({
       layout={{
         autosize: true,
         paper_bgcolor: "transparent",
-        plot_bgcolor: "#202020",
-        margin: { l: 30, r: 10, t: 10, b: 30 },
+        plot_bgcolor: "transparent",
+        margin: { l: 0, r: 0, t: 0, b: 0 },
         legend: { orientation: "h" },
         uirevision: `dims-${dimensions}`,
-        // Default to pan so users can explore; lasso/select available in mode bar.
-        dragmode: "pan",
+        dragmode: dimensions === 2? "pan" : "orbital rotation",
+
+        ...(dimensions === 2
+          ? {
+              xaxis: { visible: false },
+              yaxis: { visible: false },
+            }
+          : {
+              scene: {
+                xaxis: { visible: false },
+                yaxis: { visible: false },
+                zaxis: { visible: false },
+              },
+            }),
       }}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
@@ -215,7 +214,7 @@ export default function EmbeddingPlot({
         displaylogo: false,
         responsive: true,
         // Show lasso and box-select tools in the mode bar.
-        modeBarButtonsToAdd: ["lasso2d", "select2d"] as unknown as Plotly.ModeBarDefaultButtons[],
+        modeBarButtonsToAdd: ["lasso2d"] as unknown as Plotly.ModeBarDefaultButtons[],
       }}
       onClick={(event) => {
         const point = event.points?.[0];
