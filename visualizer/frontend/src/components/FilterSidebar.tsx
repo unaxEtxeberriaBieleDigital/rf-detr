@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
+import bieleLogo from "../assets/logos/biele-logo.png"
 
 // -----------------------------------------------------------------------
 // Types
@@ -158,6 +159,7 @@ export default function FilterSidebar({
   filters,
   onChange,
 }: FilterSidebarProps) {
+  const [confMode, setConfMode] = useState<"global" | "perclass">("global");
   // Derived collections
   const availableSplits = useMemo(
     () => Array.from(new Set(records.map((r) => r.split))).sort(),
@@ -269,24 +271,18 @@ export default function FilterSidebar({
 
   return (
     <aside className="fsb-sidebar">
+      <img src={bieleLogo} alt="Biele Logo" />
       <div className="fsb-header">
         <span className="fsb-title">Filtros</span>
         {activeFilterCount > 0 && (
           <button type="button" className="fsb-reset" onClick={resetAll}>
-            Resetear ({activeFilterCount})
+            Resetear ({activeFilterCount}) 
           </button>
         )}
       </div>
 
       {/* ── Prediction quality ── */}
       <Section title="Calidad de predicción">
-        <button
-          type="button"
-          className="fsb-link"
-          onClick={toggleAllQualities}
-        >
-          {filters.qualities.size === 0 ? "Seleccionar todos" : "Deseleccionar todos"}
-        </button>
         <div className="fsb-quality-pills">
           {ALL_QUALITIES.map((q) => {
             const active = filters.qualities.size === 0 || filters.qualities.has(q);
@@ -309,67 +305,79 @@ export default function FilterSidebar({
 
       {/* ── Confidence ── */}
       <Section title="Confianza">
-        <div className="fsb-conf-row">
-          <label className="fsb-conf-label" htmlFor="fsb-global-conf">
-            Global: {filters.minConfidence.toFixed(2)}
-          </label>
-          <input
-            id="fsb-global-conf"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={filters.minConfidence}
-            onChange={(e) => setGlobalConfidence(Number(e.currentTarget.value))}
-            className="fsb-slider"
-          />
+        <div className="conf-type-selector">
+          <button
+            type="button"
+            className={confMode === "global" ? "conf-type-btn conf-type-btn--active" : "conf-type-btn"}
+            onClick={() => setConfMode("global")}
+          >
+            Global
+          </button>
+          <button
+            type="button"
+            className={confMode === "perclass" ? "conf-type-btn conf-type-btn--active" : "conf-type-btn"}
+            onClick={() => setConfMode("perclass")}
+          >
+            Por clase
+          </button>
         </div>
 
-        {availableClasses.length > 0 && (
-          <>
-            <p className="fsb-conf-sub">Por clase (sobreescribe global):</p>
-            <div className="fsb-per-class-conf">
-              {availableClasses.map((id) => {
-                const override = filters.perClassConfidence.get(id);
-                const value = override !== undefined ? override : filters.minConfidence;
-                const hasOverride = override !== undefined;
-                return (
-                  <div key={id} className="fsb-conf-row fsb-conf-row-class">
-                    <span
-                      className={`fsb-conf-label fsb-class-label ${hasOverride ? "fsb-conf-override" : ""}`}
-                      title={categories[id] ?? `Clase ${id}`}
-                    >
-                      {categories[id] ?? `Clase ${id}`}
-                      {hasOverride && <span className="fsb-override-dot" />}
-                    </span>
-                    <span className="fsb-conf-value">{value.toFixed(2)}</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={value}
-                      onChange={(e) => setPerClassConfidence(id, Number(e.currentTarget.value))}
-                      className="fsb-slider"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </>
+        {confMode === "global" && (
+          <div className="fsb-conf-row">
+            <label className="fsb-conf-label" htmlFor="fsb-global-conf">
+              Global: {filters.minConfidence.toFixed(2)}
+            </label>
+            <input
+              id="fsb-global-conf"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={filters.minConfidence}
+              onChange={(e) => setGlobalConfidence(Number(e.currentTarget.value))}
+              className="fsb-slider"
+            />
+          </div>
+        )}
+
+        {confMode === "perclass" && availableClasses.length > 0 && (
+          <div className="fsb-per-class-conf">
+            {availableClasses.map((id) => {
+              const override = filters.perClassConfidence.get(id);
+              const value = override !== undefined ? override : filters.minConfidence;
+              const hasOverride = override !== undefined;
+              return (
+                <div key={id} className="fsb-conf-row fsb-conf-row-class">
+                  <span
+                    className={`fsb-conf-label fsb-class-label ${hasOverride ? "fsb-conf-override" : ""}`}
+                    title={categories[id] ?? `Clase ${id}`}
+                  >
+                    {categories[id] ?? `Clase ${id}`}
+                    {hasOverride && <span className="fsb-override-dot" />}
+                  </span>
+                  <span className="fsb-conf-value">{value.toFixed(2)}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={value}
+                    onChange={(e) => setPerClassConfidence(id, Number(e.currentTarget.value))}
+                    className="fsb-slider"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {confMode === "perclass" && availableClasses.length === 0 && (
+          <p className="fsb-conf-sub">No hay clases disponibles.</p>
         )}
       </Section>
 
       {/* ── Classes ── */}
       <Section title="Clases">
-        <div className="fsb-row-actions">
-          <button type="button" className="fsb-link" onClick={selectAllClasses}>
-            Todas
-          </button>
-          <button type="button" className="fsb-link" onClick={deselectAllClasses}>
-            Ninguna
-          </button>
-        </div>
         <div className="fsb-class-list">
           {availableClasses.map((id) => {
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);
@@ -391,11 +399,6 @@ export default function FilterSidebar({
 
       {/* ── Split ── */}
       <Section title="Split">
-        <div className="fsb-row-actions">
-          <button type="button" className="fsb-link" onClick={selectAllSplits}>
-            Todos
-          </button>
-        </div>
         <div className="fsb-class-list">
           {availableSplits.map((split) => {
             const checked = filters.visibleSplits.size === 0 || filters.visibleSplits.has(split);

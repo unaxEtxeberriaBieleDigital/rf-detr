@@ -1,13 +1,10 @@
 /* ── Filter Sidebar ── */
 .fsb-sidebar {
-  width: 300px;
+  width: 100%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow-y: auto;
+  background: transparent;
   font-size: 0.84rem;
 }
 
@@ -73,6 +70,38 @@
   gap: 0.45rem;
 }
 
+/* ── Confidence mode toggle ── */
+.conf-type-selector {
+  display: flex;
+  background-color: #000;
+  border: 1px solid #fff;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.conf-type-btn {
+  flex: 1;
+  padding: 0.3rem 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: #000;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+
+.conf-type-btn--active {
+  background: #fff;
+  color: #000;
+}
+
+.conf-type-btn:not(.conf-type-btn--active):hover {
+  background: #1a1a1a;
+  color: var(--text-secondary);
+}
+
 .fsb-link {
   background: none;
   border: none;
@@ -97,6 +126,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  width: 100%;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
   border: 2px solid var(--border-strong);
