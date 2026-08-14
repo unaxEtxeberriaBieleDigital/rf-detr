@@ -8,6 +8,7 @@ import ImageViewerModal from "../components/ImageViewerModal";
 import SemanticSearchPanel from "../components/SemanticSearchPanel";
 import { useAppConfig } from "../context/AppContext";
 import type { EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
+import LoadingDiv from "../components/LoadingDiv";
 
 export default function VisualizerPage() {
   const { config, setConfig, reset } = useAppConfig();
@@ -210,7 +211,9 @@ export default function VisualizerPage() {
         </div>
       </header>
 
-      {loading && <p>Cargando registros...</p>}
+      {loading && 
+        <LoadingDiv />
+      }
       {error && <p className="setup-error">{error}</p>}
 
       {!loading && !error && (

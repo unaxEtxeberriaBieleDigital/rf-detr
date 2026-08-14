@@ -6,8 +6,6 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import { degToRad } from 'three/src/math/MathUtils.js';
 
-import bieleLogo from '../assets/logos/biele-logo.png';
-
 import '../styles/setup.css';
 
 type UniformValue = THREE.IUniform<unknown> | unknown;
@@ -79,12 +77,21 @@ function extendMaterial<T extends THREE.Material = THREE.Material>(
   return mat;
 }
 
-const CanvasWrapper: FC<{ children: ReactNode }> = ({ children }) => (
+interface CanvasWrapperProps {
+  children: ReactNode;
+  centralContent?: ReactNode;
+}
+
+const CanvasWrapper: FC<CanvasWrapperProps> = ({ children, centralContent }) => (
   <div className="beams-container">
     <Canvas dpr={[1, 2]} frameloop="always" className="beams-canvas">
       {children}
     </Canvas>
-    <img src={bieleLogo} alt="Biele" className="beams-logo" />
+    {centralContent && (
+      <div className="beams-central-content">
+        {centralContent}
+      </div>
+    )}
   </div>
 );
 
@@ -182,6 +189,7 @@ interface BeamsProps {
   noiseIntensity?: number;
   scale?: number;
   rotation?: number;
+  centralContent?: ReactNode;
 }
 
 const Beams: FC<BeamsProps> = ({
@@ -192,7 +200,8 @@ const Beams: FC<BeamsProps> = ({
   speed = 2,
   noiseIntensity = 1.75,
   scale = 0.2,
-  rotation = 0
+  rotation = 0,
+  centralContent,
 }) => {
   const meshRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>>(null!);
 
@@ -254,7 +263,7 @@ const Beams: FC<BeamsProps> = ({
   );
 
   return (
-    <CanvasWrapper>
+    <CanvasWrapper centralContent={centralContent}>
       <group rotation={[0, 0, degToRad(rotation)]}>
         <PlaneNoise ref={meshRef} material={beamMaterial} count={beamNumber} width={beamWidth} height={beamHeight} />
         <DirLight color={lightColor} position={[0, 3, 10]} />

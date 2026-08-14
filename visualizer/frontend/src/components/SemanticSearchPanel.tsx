@@ -90,6 +90,12 @@ export default function SemanticSearchPanel({
 
       {error && <p className="setup-error">{error}</p>}
 
+      {!error && !status && 
+        <>
+          <p className="image-gallery-loading">Cargando...</p>
+          <div className="loader" />
+        </>
+      }
       {!error && !status && <p className="image-gallery-loading">Cargando...</p>}
 
       {status && (status.status === "pending" || status.status === "running") && (

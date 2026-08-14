@@ -3,8 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJob } from "../api/client";
 import { useAppConfig } from "../context/AppContext";
 import type { CheckDatasetResponse } from "../types";
-import Beams from "../components/SetUpBackground";
+import Beams from "../components/DefaultBackground";
 import ParticleText from "../components/ParticleText";
+import bieleLogo from "../assets/logos/biele-logo.png"
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -203,6 +204,7 @@ export default function SetupPage() {
         noiseIntensity={1.75}
         scale={0.2}
         rotation={30}
+        centralContent={<img src={bieleLogo} alt="Biele" className="beams-logo" />}
       />
       <main className="setup-container">
         <h1>

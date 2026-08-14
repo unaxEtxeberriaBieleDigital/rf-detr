@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import type { Data } from "plotly.js";
 import type { EmbeddingRecordDTO } from "../types";
+import Beams from "./DefaultBackground";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -109,7 +110,7 @@ export default function EmbeddingPlot({
       byClass.set(key, bucket);
     }
 
-    return Array.from(byClass.entries()).map(([classKey, groupRecords], traceIndex) => {
+    return Array.from(byClass.entries()).map(([classKey, groupRecords], _) => {
       const classId = classKey === "none" ? null : Number(classKey);
       const x = groupRecords.map((r) => r.embedding![0]);
       const y = groupRecords.map((r) => r.embedding![1]);
@@ -162,6 +163,20 @@ export default function EmbeddingPlot({
   }, [withEmbedding, dimensions, categories, selectedRecordId, clusterSelection]);
 
   if (withEmbedding.length === 0) {
+    const centralContent = (
+      <div 
+        style={{
+            backgroundColor: "#000000",
+            border: "var(--border-subtle) 2px solid",
+            borderRadius: "var(--radius-lg)"
+        }}
+      >
+        <p>
+          Usa el panel <strong>Calcular</strong> para visualizar los embeddings en el scatter plot.
+        </p>
+      </div>
+    );
+
     return (
       <div
         style={{
@@ -169,13 +184,23 @@ export default function EmbeddingPlot({
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
+          width: "100%",
           color: "#ff0000",
           fontSize: "0.9rem",
           textAlign: "center",
-          padding: "1rem",
         }}
       >
-        Usa el panel <strong>&nbsp;Calcular&nbsp;</strong> para visualizar los embeddings en el scatter plot.
+        <Beams
+          beamWidth={3}
+          beamHeight={30}
+          beamNumber={20}
+          lightColor="#ffffff"
+          speed={2}
+          noiseIntensity={1.75}
+          scale={0.2}
+          rotation={30}
+          centralContent={centralContent}
+        />
       </div>
     );
   }
