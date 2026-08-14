@@ -236,33 +236,17 @@ export default function EmbeddingPlot({
 
   const pcaPanel = (
     <div className="pca-panel">
-      <span className="pca-panel-label">
-        {activePcaDims ? `${ALGO_LABELS[algorithm]} ${activePcaDims}D` : "Sin proyección"}
-      </span>
-
-      <fieldset className="pca-dims" disabled={reductionRunning}>
-        <legend>Algoritmo</legend>
-        {(["pca", "tsne", "umap"] as ReductionAlgorithm[]).map((a) => (
-          <label
-            key={a}
-            title={
-              a === "tsne"
-                ? "t-SNE: carga todos los embeddings en RAM. Recomendado solo en subsets filtrados (<100k)."
-                : a === "umap"
-                ? "UMAP: más rápido que t-SNE. Requiere umap-learn. Escala hasta ~500k."
-                : "PCA: incremental, sin límite de RAM."
-            }
-          >
-            <input
-              type="radio"
-              name="algorithm"
-              checked={algorithm === a}
-              onChange={() => onAlgorithmChange(a)}
-            />
-            {` ${ALGO_LABELS[a]}`}
-          </label>
-        ))}
-      </fieldset>
+      <select
+        className="pca-algo-select"
+        value={algorithm}
+        disabled={reductionRunning}
+        onChange={(e) => onAlgorithmChange(e.currentTarget.value as ReductionAlgorithm)}
+        title="Algoritmo de reducción de dimensionalidad"
+      >
+        <option value="pca">PCA</option>
+        <option value="tsne">t-SNE</option>
+        <option value="umap">UMAP</option>
+      </select>
 
       <SegmentedControl
         options={[
@@ -299,12 +283,11 @@ export default function EmbeddingPlot({
 
   return (
     <div className="embedding-plot-wrapper">
-      {pcaPanel}
       {/* key forces a full remount when switching between 2D and 3D because the trace
           type changes (scattergl ↔ scatter3d) and Plotly cannot morph between them in-place. */}
-      {reductionRunning? (
+      {reductionRunning ? (
         <LoadingDiv />
-      ):(
+      ) : (
         <div className="embedding-plot-canvas">
           <Plot
             key={`plot-${dimensions}`}
@@ -314,7 +297,15 @@ export default function EmbeddingPlot({
               paper_bgcolor: "transparent",
               plot_bgcolor: "transparent",
               margin: { l: 0, r: 0, t: 0, b: 0 },
-              legend: { orientation: "h" },
+              legend: {
+                orientation: "h",
+                x: 0,
+                y: 0,
+                xanchor: "left",
+                yanchor: "bottom",
+                bgcolor: "rgba(0,0,0,0.45)",
+                font: { color: "#fff", size: 11 },
+              },
               uirevision: `dims-${dimensions}`,
               dragmode: dimensions === 2 ? "pan" : "orbital rotation",
               ...(dimensions === 2
@@ -347,7 +338,7 @@ export default function EmbeddingPlot({
           />
         </div>
       )}
-      
+      {pcaPanel}
     </div>
   );
 }
