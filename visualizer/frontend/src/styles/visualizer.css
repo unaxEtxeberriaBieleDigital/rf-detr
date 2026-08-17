@@ -11,7 +11,7 @@
 /* ── Collapsible sidebar ── */
 .visualizer-sidebar {
   position: relative;
-  width: 0;
+  width: 50px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 100%;
   height: 36px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);

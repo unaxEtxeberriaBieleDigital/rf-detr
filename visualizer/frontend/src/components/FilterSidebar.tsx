@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
 import SegmentedControl from "./SegmentedControl";
 import bieleLogo from "../assets/logos/biele-logo.png"
@@ -103,6 +103,8 @@ interface FilterSidebarProps {
   categories: Record<number, string>;
   filters: FilterState;
   onChange: (next: FilterState) => void;
+  sidebarOpen: boolean,
+  setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>,
 }
 
 // -----------------------------------------------------------------------
@@ -159,6 +161,8 @@ export default function FilterSidebar({
   categories,
   filters,
   onChange,
+  sidebarOpen,
+  setSidebarOpen,
 }: FilterSidebarProps) {
   const [confMode, setConfMode] = useState<"global" | "perclass">("global");
   // Derived collections
@@ -252,6 +256,14 @@ export default function FilterSidebar({
 
   return (
     <aside className="fsb-sidebar">
+      <button
+        type="button"
+        className="visualizer-sidebar-toggle"
+        onClick={() => setSidebarOpen((v) => !v)}
+        title={sidebarOpen ? "Cerrar filtros" : "Abrir filtros"}
+      >
+        ☰
+      </button>
       <img src={bieleLogo} alt="Biele Logo" />
       <div className="fsb-header">
         <span className="fsb-title">Filtros</span>

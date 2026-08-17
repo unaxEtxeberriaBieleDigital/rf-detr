@@ -136,6 +136,8 @@ export default function VisualizerPage() {
               setFilters(next);
               setClusterSelection(null);
             }}
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
           />
         </div>
       </aside>
@@ -144,14 +146,6 @@ export default function VisualizerPage() {
       <div className={`visualizer-main-wrapper${sidebarOpen ? " visualizer-main-wrapper--shifted" : ""}`}>
         <header className="visualizer-header">
           <div className="visualizer-header-left">
-            <button
-              type="button"
-              className="visualizer-sidebar-toggle"
-              onClick={() => setSidebarOpen((v) => !v)}
-              title={sidebarOpen ? "Cerrar filtros" : "Abrir filtros"}
-            >
-              ☰
-            </button>
             <div>
               <h1>RF-DETR Visualizer</h1>
               <p className="visualizer-subtitle">
