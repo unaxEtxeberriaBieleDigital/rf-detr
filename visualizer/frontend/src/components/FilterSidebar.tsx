@@ -261,7 +261,9 @@ export default function FilterSidebar({
     <aside className="fsb-sidebar">
       <button
         type="button"
-        className="visualizer-sidebar-toggle"
+        className={`visualizer-sidebar-toggle ${
+          sidebarOpen? "visualizer-sidebar-toggle--open" : "visualizer-sidebar-toggle--closed"
+        }`}
         onClick={() => setSidebarOpen((v) => !v)}
         title={sidebarOpen ? "Cerrar filtros" : "Abrir filtros"}
       >

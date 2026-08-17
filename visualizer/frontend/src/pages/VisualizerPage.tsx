@@ -165,14 +165,6 @@ export default function VisualizerPage() {
 
         {!loading && !error && (
           <div className="visualizer-content">
-            <div className="visualizer-record-count">
-              {filteredRecords.length.toLocaleString()} de {records.length.toLocaleString()} registros
-              {clusterSelection && (
-                <span className="cluster-sel-badge">
-                  {" "}· {clusterSelection.size} seleccionados en gráfico
-                </span>
-              )}
-            </div>
 
             <div className="visualizer-body">
               <section className="visualizer-gallery">

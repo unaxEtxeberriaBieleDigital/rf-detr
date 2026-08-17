@@ -31,17 +31,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 36px;
-  background: var(--bg-elevated);
+  height: 50px;
+  background: transparent;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xl);
   cursor: pointer;
   font-size: 1.1rem;
   color: var(--text-secondary);
   padding: 0;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+}
+
+.visualizer-sidebar-toggle--open {
+  width: 100%;
+}
+
+.visualizer-sidebar-toggle--closed {
+  width: 50px;
 }
 
 .visualizer-sidebar-toggle:hover {
