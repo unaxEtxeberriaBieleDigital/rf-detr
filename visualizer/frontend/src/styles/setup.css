@@ -1,7 +1,7 @@
 /* --- Setup page --- */
 
 .setup-page {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(420px, 0.7fr);
   background: var(--bg-app);
@@ -69,13 +69,14 @@
   position: relative;
   z-index: 1;
   width: 100%;
+  height: 100%;
   margin: 0 auto;
   padding: 3rem 2.5rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  overflow-y: auto;
+  overflow: hidden;
   background: #000000;
 }
 
@@ -121,12 +122,16 @@
 .setup-form {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 1.1rem;
   text-align: left;
   background: rgba(7, 7, 7, 0);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 1.75rem;
+  overflow-y: auto;
+  overflow-x: hidden;
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow-lg);
 }
@@ -270,14 +275,15 @@ fieldset.field {
 @media (max-width: 1100px) {
   .setup-page {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, 42vh) minmax(0, 1fr);
     justify-items: center;
-    overflow-y: auto;
+    overflow: hidden;
   }
 
   .beams-container {
     justify-self: stretch;
-    height: 42vh;
-    min-height: 320px;
+    height: 100%;
+    min-height: 0;
   }
 
   .setup-container {
