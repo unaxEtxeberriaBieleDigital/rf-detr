@@ -6,7 +6,7 @@ import type { EmbeddingRecordDTO } from "../types";
 import type { ReductionAlgorithm } from "../api/client";
 import Beams from "./DefaultBackground";
 import SegmentedControl from "./SegmentedControl";
-import "../styles/pcaPanel.css";
+import "../styles/embeddingsPlot.css";
 import LoadingDiv from "./LoadingDiv";
 
 const Plot = createPlotlyComponent(Plotly);
@@ -228,11 +228,6 @@ export default function EmbeddingPlot({
     );
   }
 
-  const ALGO_LABELS: Record<ReductionAlgorithm, string> = {
-    pca: "PCA",
-    tsne: "t-SNE",
-    umap: "UMAP",
-  };
 
   const pcaPanel = (
     <div className="pca-panel">

@@ -3,7 +3,7 @@ import "./styles/base.css";
 import "./styles/setup.css";
 import "./styles/visualizer.css";
 import "./styles/filterSidebar.css";
-import "./styles/pcaPanel.css";
+import "./styles/embeddingsPlot.css";
 import "./styles/imageGallery.css";
 import "./styles/semanticSearch.css";
 import { useAppConfig } from "./context/AppContext";
