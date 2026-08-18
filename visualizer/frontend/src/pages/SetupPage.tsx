@@ -108,6 +108,16 @@ export default function SetupPage() {
         directory: false,
         multiple: false,
         title: "Selecciona el archivo de modelo",
+        filters: [
+          {
+            name: 'Modelos PyTorch',
+            extensions: ['pth']
+          },
+          {
+            name: 'Todos los archivos',
+            extensions: ['*']
+          }
+        ]
       });
       if (typeof selected === "string" && selected.trim().length > 0) {
         setModelPath(selected);
