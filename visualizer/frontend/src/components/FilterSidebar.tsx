@@ -84,7 +84,7 @@ export function applyFilters(
     }
 
     // Class filter
-    const classId = r.ground_truth?.class_id ?? r.prediction?.class_id ?? null;
+    const classId = r.prediction?.class_id ?? r.ground_truth?.class_id ?? null;
     if (filters.visibleClasses.size > 0 && classId !== null && !filters.visibleClasses.has(classId)) return false;
 
     // Confidence filter
@@ -198,7 +198,7 @@ export default function FilterSidebar({
     for (const r of records) {
       if (filters.visibleSplits.size > 0 && !filters.visibleSplits.has(r.split)) continue;
 
-      const classId = r.ground_truth?.class_id ?? r.prediction?.class_id ?? null;
+      const classId = r.prediction?.class_id ?? r.ground_truth?.class_id ?? null;
       if (filters.visibleClasses.size > 0 && classId !== null && !filters.visibleClasses.has(classId)) {
         continue;
       }

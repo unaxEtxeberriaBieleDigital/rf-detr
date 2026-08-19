@@ -1,5 +1,5 @@
 import { getRecordImageUrl } from "../api/client";
-import type { EmbeddingRecordDTO } from "../types";
+import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 
 interface ImageCardProps {
@@ -7,6 +7,7 @@ interface ImageCardProps {
   imagePath: string;
   records: EmbeddingRecordDTO[];
   minConfidence: number;
+  classThresholds?: ClassThresholds;
   isSelected: boolean;
   onOpen: () => void;
 }
@@ -17,6 +18,7 @@ export default function ImageCard({
   imagePath,
   records,
   minConfidence,
+  classThresholds,
   isSelected,
   onOpen,
 }: ImageCardProps) {
@@ -40,6 +42,7 @@ export default function ImageCard({
             imagePath={imagePath}
             records={records}
             minConfidence={minConfidence}
+            classThresholds={classThresholds}
           />
         )}
         <span className="image-tile-name">

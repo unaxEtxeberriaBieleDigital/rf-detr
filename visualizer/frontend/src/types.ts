@@ -81,9 +81,12 @@ export interface EvaluationMetricsResponse {
   calculated_at: string | null;
 }
 
+export type ClassThresholds = Record<number, number>;
+
 export interface OptimalThresholdResponse {
   dataset_type: string;
   metric_name: string;
+  class_id: number | null;
   threshold: number;
   metric_value: number;
   num_thresholds: number;

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getJobImagePaths, getJobRecordsByImagePaths } from "../api/client";
 import ImageCard from "./ImageCard";
 import ImageViewerModal from "./ImageViewerModal";
-import type { EmbeddingRecordDTO } from "../types";
+import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 
 interface ImageGalleryProps {
   jobId: string;
   splitFilter: string;
   minConfidence: number;
+  classThresholds?: ClassThresholds;
   /** Class id → human readable name, forwarded to the image viewer's side panel. */
   categories: Record<number, string>;
   /** Model info, forwarded to the image viewer's "search similar" feature. */
@@ -36,6 +37,7 @@ export default function ImageGallery({
   jobId,
   splitFilter,
   minConfidence,
+  classThresholds,
   categories,
   modelPath,
   modelType,
@@ -180,6 +182,7 @@ export default function ImageGallery({
             imagePath={imagePath}
             records={imageRecords}
             minConfidence={minConfidence}
+            classThresholds={classThresholds}
             isSelected={imagePath === selectedImagePath}
             onOpen={() => {
               onSelectImage(imagePath);
@@ -199,6 +202,7 @@ export default function ImageGallery({
         imagePath={openImagePath}
         records={openImageRecords}
         minConfidence={minConfidence}
+        classThresholds={classThresholds}
         categories={categories}
         modelPath={modelPath}
         modelType={modelType}

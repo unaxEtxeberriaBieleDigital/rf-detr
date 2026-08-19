@@ -4,6 +4,7 @@ import createPlotlyComponent from "react-plotly.js/factory";
 import type { Data } from "plotly.js";
 import { getJobEvaluation, getJobOptimalThreshold } from "../api/client";
 import type {
+  ClassThresholds,
   EvaluationMetricsResponse,
   MetricDefinitionDTO,
   OptimalThresholdResponse,
@@ -15,6 +16,8 @@ const Plot = createPlotlyComponent(Plotly);
 
 interface EvaluationPanelProps {
   jobId: string;
+  classThresholds: ClassThresholds;
+  categories: Record<number, string>;
 }
 
 function asNumber(value: unknown): number | null {
@@ -42,7 +45,7 @@ function asMatrix(value: unknown): number[][] {
     .map((row) => row.map((cell) => Number(cell)));
 }
 
-export default function EvaluationPanel({ jobId }: EvaluationPanelProps) {
+export default function EvaluationPanel({ jobId, classThresholds, categories }: EvaluationPanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationMetricsResponse | null>(null);
@@ -53,7 +56,7 @@ export default function EvaluationPanel({ jobId }: EvaluationPanelProps) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getJobEvaluation(jobId)
+    getJobEvaluation(jobId, classThresholds)
       .then((resp) => {
         setEvaluation(resp);
       })
@@ -61,7 +64,7 @@ export default function EvaluationPanel({ jobId }: EvaluationPanelProps) {
         setError(String(e instanceof Error ? e.message : e));
       })
       .finally(() => setLoading(false));
-  }, [jobId]);
+  }, [jobId, classThresholds]);
 
   const metricByName = useMemo(() => {
     const map = new Map<string, MetricDefinitionDTO>();
@@ -144,7 +147,16 @@ export default function EvaluationPanel({ jobId }: EvaluationPanelProps) {
       </div>
 
       <div className="evaluation-panel__optimize">
-        <label htmlFor="opt-metric">Métrica para umbral óptimo</label>
+        <label>Umbrales óptimos por clase (F1)</label>
+        <div className="evaluation-panel__thresholds">
+          {Object.entries(classThresholds).map(([classId, threshold]) => (
+            <span key={classId}>
+              {categories[Number(classId)] ?? `Clase ${classId}`}: {threshold.toFixed(3)}
+            </span>
+          ))}
+          {Object.keys(classThresholds).length === 0 && <span>Sin predicciones por clase</span>}
+        </div>
+        <label htmlFor="opt-metric">Métrica para umbral manual</label>
         <select
           id="opt-metric"
           value={selectedMetric}

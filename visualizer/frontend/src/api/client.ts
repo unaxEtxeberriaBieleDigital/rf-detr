@@ -167,19 +167,27 @@ export function getSemanticSearch(jobId: string, searchId: string): Promise<Sema
   return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
 }
 
-export function getJobEvaluation(jobId: string): Promise<EvaluationMetricsResponse> {
-  return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation`);
+export function getJobEvaluation(
+  jobId: string,
+  classThresholds?: Record<number, number>,
+): Promise<EvaluationMetricsResponse> {
+  const search = new URLSearchParams();
+  if (classThresholds) search.set("class_thresholds", JSON.stringify(classThresholds));
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation${suffix}`);
 }
 
 export function getJobOptimalThreshold(
   jobId: string,
   metricName: string,
   numThresholds = 100,
+  classId?: number,
 ): Promise<OptimalThresholdResponse> {
   const search = new URLSearchParams({
     metric: metricName,
     num_thresholds: String(numThresholds),
   });
+  if (classId !== undefined) search.set("class_id", String(classId));
   return request<OptimalThresholdResponse>(
     `/api/v1/jobs/${jobId}/optimal-threshold?${search.toString()}`,
   );

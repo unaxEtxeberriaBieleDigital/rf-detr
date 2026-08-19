@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { EmbeddingRecordDTO } from "../types";
+import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 
 const GT_COLOR = "#1565c0";
 const STATUS_COLOR: Record<string, string> = {
@@ -15,6 +15,7 @@ interface ImageWithBoxesProps {
   imagePath: string;
   records: EmbeddingRecordDTO[];
   minConfidence?: number;
+  classThresholds?: ClassThresholds;
   showGroundTruths?: boolean;
   showPredictions?: boolean;
 }
@@ -25,14 +26,20 @@ export default function ImageWithBoxes({
   imagePath,
   records,
   minConfidence = 0,
+  classThresholds,
   showGroundTruths = true,
   showPredictions = true,
 }: ImageWithBoxesProps) {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   const visiblePredictions = useMemo(
-    () => records.filter((r) => r.prediction?.bbox && r.prediction.confidence >= minConfidence),
-    [records, minConfidence],
+    () =>
+      records.filter((r) => {
+        if (!r.prediction?.bbox) return false;
+        const threshold = classThresholds?.[r.prediction.class_id] ?? minConfidence;
+        return r.prediction.confidence >= threshold;
+      }),
+    [records, minConfidence, classThresholds],
   );
 
   const groundTruths = useMemo(() => records.filter((record) => record.ground_truth?.bbox), [records]);

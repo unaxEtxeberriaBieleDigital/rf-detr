@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getRecordImageUrl, startSemanticSearch } from "../api/client";
-import type { EmbeddingRecordDTO } from "../types";
+import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 import PanZoomViewport, { type PanZoomHandle } from "./PanZoomViewport";
 
@@ -12,6 +12,7 @@ interface ImageViewerModalProps {
   records: EmbeddingRecordDTO[];
   /** Global confidence threshold coming from the sidebar filters. */
   minConfidence: number;
+  classThresholds?: ClassThresholds;
   /** Class id → human readable name, used to label GTs and defects in the side panel. */
   categories: Record<number, string>;
   /** Model info, forwarded to the "search similar" feature so it can re-run the model. */
@@ -63,6 +64,7 @@ export default function ImageViewerModal({
   imagePath,
   records,
   minConfidence,
+  classThresholds,
   categories,
   modelPath,
   modelType,
@@ -149,8 +151,14 @@ export default function ImageViewerModal({
   const groundTruthRecords = useMemo(() => records.filter((r) => r.ground_truth?.bbox), [records]);
   const defectRecords = useMemo(
     () =>
-      records.filter((r) => r.prediction?.bbox && r.prediction.confidence >= effectiveMinConfidence),
-    [records, effectiveMinConfidence],
+      records.filter((r) => {
+        if (!r.prediction?.bbox) return false;
+        const threshold = useGlobalFilters
+          ? classThresholds?.[r.prediction.class_id] ?? effectiveMinConfidence
+          : effectiveMinConfidence;
+        return r.prediction.confidence >= threshold;
+      }),
+    [records, effectiveMinConfidence, classThresholds, useGlobalFilters],
   );
   const gtCount = groundTruthRecords.length;
   const predCount = defectRecords.length;
@@ -243,6 +251,7 @@ export default function ImageViewerModal({
               imagePath={imagePath}
               records={records}
               minConfidence={effectiveMinConfidence}
+              classThresholds={useGlobalFilters ? classThresholds : undefined}
               showGroundTruths={showGroundTruths}
               showPredictions={showPredictions}
             />

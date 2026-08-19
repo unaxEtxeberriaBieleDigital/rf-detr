@@ -33,7 +33,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel as PydanticModel
 
 from rfdetr.utilities.logger import get_logger
-
 from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.evaluator import Match
@@ -49,9 +48,9 @@ from visualizer.backend.models import rfdetr  # noqa: F401
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
-from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
-from visualizer.backend.store import DB_FILENAME, JobStore
+from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
+from visualizer.backend.store import JobStore
 
 logger = get_logger()
 
@@ -142,11 +141,13 @@ class EvaluationMetricsResponse(PydanticModel):
     metric_definitions: list[MetricDefinitionResponse]
     cached: bool
     calculated_at: str | None = None
+    applied_class_thresholds: dict[int, float] | None = None
 
 
 class OptimalThresholdResponse(PydanticModel):
     dataset_type: str
     metric_name: str
+    class_id: int | None = None
     threshold: float
     metric_value: float
     num_thresholds: int
@@ -190,12 +191,11 @@ class SemanticSearchStatusResponse(PydanticModel):
 
 
 @app.on_event("startup")
-def _reload_persisted_jobs() -> None:  # noqa: ANN202
+def _reload_persisted_jobs() -> None:
     """Scan the known dataset paths for existing DB files and re-register done jobs.
 
-    This makes jobs survive backend restarts.  Any DB whose stored status is
-    ``running`` or ``pending`` (i.e. the process was killed mid-run) is marked
-    ``error`` so the frontend doesn't wait forever.
+    This makes jobs survive backend restarts.  Any DB whose stored status is ``running`` or ``pending`` (i.e. the
+    process was killed mid-run) is marked ``error`` so the frontend doesn't wait forever.
     """
     # We only know about DBs that are explicitly listed – there's no global registry
     # of dataset paths.  Instead, we expose a /jobs/load endpoint that the frontend
@@ -288,14 +288,12 @@ def create_job(request: JobRequest) -> JobStatusResponse:
     if request.dataset_type not in DATASET_REGISTRY:
         raise HTTPException(
             400,
-            f"Unknown dataset_type '{request.dataset_type}'. "
-            f"Available: {sorted(DATASET_REGISTRY)}",
+            f"Unknown dataset_type '{request.dataset_type}'. Available: {sorted(DATASET_REGISTRY)}",
         )
     if request.model_type not in MODEL_REGISTRY:
         raise HTTPException(
             400,
-            f"Unknown model_type '{request.model_type}'. "
-            f"Available: {sorted(MODEL_REGISTRY)}",
+            f"Unknown model_type '{request.model_type}'. Available: {sorted(MODEL_REGISTRY)}",
         )
 
     dataset_cls = DATASET_REGISTRY[request.dataset_type]
@@ -303,15 +301,9 @@ def create_job(request: JobRequest) -> JobStatusResponse:
 
     try:
         dataset = dataset_cls(request.dataset_path)
-        splits = (
-            [_parse_split(name) for name in request.splits]
-            if request.splits
-            else list(dataset.splits.keys())
-        )
+        splits = [_parse_split(name) for name in request.splits] if request.splits else list(dataset.splits.keys())
     except Exception as e:
-        logger.error(
-            f"Could not initialise dataset for a new job: {e}", exc_info=True
-        )
+        logger.error(f"Could not initialise dataset for a new job: {e}", exc_info=True)
         raise HTTPException(400, f"Could not initialise dataset: {e}") from e
 
     db_already_exists = JobStore.db_exists(request.dataset_path)
@@ -346,8 +338,7 @@ def create_job(request: JobRequest) -> JobStatusResponse:
             if not store.has_progress_tracking():
                 raise HTTPException(
                     409,
-                    "Resume was requested, but this DB does not support persisted progress. "
-                    "Start a fresh run instead.",
+                    "Resume was requested, but this DB does not support persisted progress. Start a fresh run instead.",
                 )
 
             stored_status = store.get_meta("status")
@@ -448,8 +439,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     if not JobStore.db_exists(request.dataset_path):
         raise HTTPException(
             404,
-            f"No existing DB found at '{request.dataset_path}'. "
-            "Run inference first via POST /api/v1/jobs.",
+            f"No existing DB found at '{request.dataset_path}'. Run inference first via POST /api/v1/jobs.",
         )
 
     store = JobStore(request.dataset_path)
@@ -482,10 +472,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     job.num_images_processed = store.get_meta("num_images_processed") or 0
     JOB_STORE[job_id] = job
 
-    logger.info(
-        f"Loaded existing job {job_id} from '{request.dataset_path}' "
-        f"({store.record_count()} records)"
-    )
+    logger.info(f"Loaded existing job {job_id} from '{request.dataset_path}' ({store.record_count()} records)")
     if status == "error":
         job.error = error if isinstance(error, str) else "Job was interrupted"
 
@@ -586,9 +573,7 @@ def get_job_records(
     job = _get_job_or_404(job_id)
     if job.status != "done":
         raise HTTPException(409, f"Job is not finished yet (status='{job.status}')")
-    return job.store.get_records(
-        split=split, status=status, class_id=class_id, limit=limit, offset=offset
-    )
+    return job.store.get_records(split=split, status=status, class_id=class_id, limit=limit, offset=offset)
 
 
 @app.get("/api/v1/jobs/{job_id}/image-paths", response_model=ImagePathPageResponse)
@@ -613,15 +598,11 @@ def get_job_image_paths(
 
 
 @app.post("/api/v1/jobs/{job_id}/records/by-image-paths")
-def get_job_records_by_image_paths(
-    job_id: str, payload: RecordsByImagePathsRequest
-) -> list[dict]:
+def get_job_records_by_image_paths(job_id: str, payload: RecordsByImagePathsRequest) -> list[dict]:
     job = _get_job_or_404(job_id)
     if job.status != "done":
         raise HTTPException(409, f"Job is not finished yet (status='{job.status}')")
-    return job.store.get_records_by_image_paths(
-        image_paths=payload.image_paths, split=payload.split
-    )
+    return job.store.get_records_by_image_paths(image_paths=payload.image_paths, split=payload.split)
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +611,10 @@ def get_job_records_by_image_paths(
 
 
 @app.get("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
-def get_job_evaluation(job_id: str) -> EvaluationMetricsResponse:
+def get_job_evaluation(
+    job_id: str,
+    class_thresholds: str | None = Query(default=None),
+) -> EvaluationMetricsResponse:
     """Compute or return cached evaluation metrics for this job."""
     try:
         job = _get_job_or_404(job_id)
@@ -641,46 +625,50 @@ def get_job_evaluation(job_id: str) -> EvaluationMetricsResponse:
         metric_defs = get_metrics_for_dataset(dataset_type)
         if not metric_defs:
             raise HTTPException(422, f"Dataset type '{dataset_type}' has no registered metrics.")
-
-        cached = job.store.get_cached_metrics(job.id, dataset_type)
-        if cached is not None:
-            metrics, calculated_at = cached
-            return EvaluationMetricsResponse(
-                dataset_type=dataset_type,
-                metrics=metrics,
-                metric_definitions=[
-                    MetricDefinitionResponse(
-                        name=m.name,
-                        display_name=m.display_name,
-                        description=m.description,
-                        metric_type=m.metric_type.value,
-                    )
-                    for m in metric_defs
-                ],
-                cached=True,
-                calculated_at=calculated_at,
-            )
-
         calculator = _get_metrics_calculator_for_job(job, dataset_type)
+        normalized_class_thresholds = _parse_class_thresholds_query(
+            class_thresholds,
+            allowed_class_ids=set(job.categories),
+        )
+
+        metric_definition_responses = [
+            MetricDefinitionResponse(
+                name=m.name,
+                display_name=m.display_name,
+                description=m.description,
+                metric_type=m.metric_type.value,
+            )
+            for m in metric_defs
+        ]
+
+        if normalized_class_thresholds is None:
+            cached = job.store.get_cached_metrics(job.id, dataset_type)
+            if cached is not None:
+                metrics, calculated_at = cached
+                return EvaluationMetricsResponse(
+                    dataset_type=dataset_type,
+                    metrics=metrics,
+                    metric_definitions=metric_definition_responses,
+                    cached=True,
+                    calculated_at=calculated_at,
+                )
+
         matches = _load_matches_for_job(job)
-        metrics = calculator.calculate(matches)
-        job.store.cache_metrics(job.id, dataset_type, metrics)
-        cached_after_write = job.store.get_cached_metrics(job.id, dataset_type)
-        calculated_at = cached_after_write[1] if cached_after_write is not None else None
+        metrics = calculator.calculate(matches, class_thresholds=normalized_class_thresholds)
+
+        calculated_at = None
+        if normalized_class_thresholds is None:
+            job.store.cache_metrics(job.id, dataset_type, metrics)
+            cached_after_write = job.store.get_cached_metrics(job.id, dataset_type)
+            calculated_at = cached_after_write[1] if cached_after_write is not None else None
+
         return EvaluationMetricsResponse(
             dataset_type=dataset_type,
             metrics=metrics,
-            metric_definitions=[
-                MetricDefinitionResponse(
-                    name=m.name,
-                    display_name=m.display_name,
-                    description=m.description,
-                    metric_type=m.metric_type.value,
-                )
-                for m in metric_defs
-            ],
+            metric_definitions=metric_definition_responses,
             cached=False,
             calculated_at=calculated_at,
+            applied_class_thresholds=normalized_class_thresholds,
         )
     except HTTPException:
         raise
@@ -694,6 +682,7 @@ def get_optimal_threshold(
     job_id: str,
     metric: str = Query(default="f1"),
     num_thresholds: int = Query(default=100, ge=10, le=1000),
+    class_id: int | None = Query(default=None),
 ) -> OptimalThresholdResponse:
     """Find confidence threshold that maximizes one optimizable metric."""
     try:
@@ -703,18 +692,25 @@ def get_optimal_threshold(
 
         dataset_type = _get_dataset_type_for_job(job)
         calculator = _get_metrics_calculator_for_job(job, dataset_type)
+        if class_id is not None and class_id not in job.categories:
+            raise HTTPException(422, f"Unknown class_id '{class_id}' for this job.")
         matches = _load_matches_for_job(job)
         try:
             threshold = calculator.get_optimal_threshold(
                 metric_name=metric,
                 matches=matches,
                 num_thresholds=num_thresholds,
+                class_id=class_id,
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
-        filtered_matches = _apply_confidence_threshold(matches, threshold)
-        metric_value_raw = calculator.calculate(filtered_matches).get(metric, 0.0)
+        threshold_scope_matches = _filter_matches_for_threshold_optimization(matches, class_id)
+        scoped_thresholds = _build_uniform_class_thresholds(threshold_scope_matches, threshold, class_id)
+        metric_value_raw = calculator.calculate(
+            threshold_scope_matches,
+            class_thresholds=scoped_thresholds,
+        ).get(metric, 0.0)
         if isinstance(metric_value_raw, list) or isinstance(metric_value_raw, dict):
             metric_value = 0.0
         else:
@@ -723,6 +719,7 @@ def get_optimal_threshold(
         return OptimalThresholdResponse(
             dataset_type=dataset_type,
             metric_name=metric,
+            class_id=class_id,
             threshold=float(threshold),
             metric_value=metric_value,
             num_thresholds=num_thresholds,
@@ -784,8 +781,7 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
     if request.source_type not in SEMANTIC_SEARCH_SOURCE_REGISTRY:
         raise HTTPException(
             400,
-            f"Unknown source_type '{request.source_type}'. "
-            f"Available: {sorted(SEMANTIC_SEARCH_SOURCE_REGISTRY)}",
+            f"Unknown source_type '{request.source_type}'. Available: {sorted(SEMANTIC_SEARCH_SOURCE_REGISTRY)}",
         )
 
     query_embedding = job.store.get_raw_embedding(request.query_record_id)
@@ -841,9 +837,8 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
 def list_semantic_searches(job_id: str) -> list[SemanticSearchStatusResponse]:
     """List all semantic-search jobs started for *job_id* (most recent last).
 
-    Lets the frontend reattach to running/finished searches (e.g. after closing and
-    reopening the semantic-search panel, or after a page refresh) without losing track
-    of progress, as long as the backend process is still alive.
+    Lets the frontend reattach to running/finished searches (e.g. after closing and reopening the semantic-search panel,
+    or after a page refresh) without losing track of progress, as long as the backend process is still alive.
     """
     _get_job_or_404(job_id)
     matching = [j for j in SEARCH_JOB_STORE.values() if j.parent_job_id == job_id]
@@ -892,9 +887,7 @@ def _job_to_response(job: Job) -> JobStatusResponse:
     components = job.store.dimensionality_reduction_components()
     has_reduction = job.store.has_dimensionality_reduction()
     num_images_total = int(job.num_images_total or job.store.get_meta("num_images_total") or 0)
-    num_images_processed = int(
-        job.num_images_processed or job.store.get_meta("num_images_processed") or 0
-    )
+    num_images_processed = int(job.num_images_processed or job.store.get_meta("num_images_processed") or 0)
     error = job.error
     if error is None and job.status == "error":
         stored_error = job.store.get_meta("error")
@@ -951,8 +944,7 @@ def _get_metrics_calculator_for_job(job: Job, dataset_type: str):
             if not categories:
                 raise HTTPException(
                     422,
-                    "No category metadata available for evaluation. "
-                    "Load/create the job again to refresh metadata.",
+                    "No category metadata available for evaluation. Load/create the job again to refresh metadata.",
                 )
             job.categories = categories
 
@@ -1029,12 +1021,95 @@ def _load_matches_for_job(job: Job) -> list[Match]:
     return [_row_to_match(row) for row in rows]
 
 
-def _apply_confidence_threshold(matches: list[Match], threshold: float) -> list[Match]:
+def _parse_class_thresholds_query(
+    raw_class_thresholds: str | None,
+    allowed_class_ids: set[int],
+) -> dict[int, float] | None:
+    """Parse and validate a JSON-encoded per-class threshold mapping."""
+    if raw_class_thresholds is None:
+        return None
+
+    try:
+        parsed = json.loads(raw_class_thresholds)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            422,
+            "Invalid class_thresholds: expected a JSON object mapping class ids to thresholds.",
+        ) from exc
+
+    if parsed is None:
+        return None
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            422,
+            "Invalid class_thresholds: expected a JSON object mapping class ids to thresholds.",
+        )
+
+    normalized: dict[int, float] = {}
+    for raw_class_id, raw_threshold in parsed.items():
+        try:
+            class_id = int(raw_class_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                422,
+                "Invalid class_thresholds: all keys must be integer class ids.",
+            ) from exc
+
+        if class_id not in allowed_class_ids:
+            raise HTTPException(
+                422,
+                f"Invalid class_thresholds: unknown class_id '{class_id}'.",
+            )
+
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                422,
+                f"Invalid class_thresholds: threshold for class_id '{class_id}' must be numeric.",
+            ) from exc
+
+        if not 0.0 <= threshold <= 1.0:
+            raise HTTPException(
+                422,
+                f"Invalid class_thresholds: threshold for class_id '{class_id}' must be between 0 and 1.",
+            )
+
+        normalized[class_id] = threshold
+
+    return normalized or None
+
+
+def _filter_matches_for_threshold_optimization(
+    matches: list[Match],
+    class_id: int | None,
+) -> list[Match]:
+    """Filter predictions and false negatives belonging to one class."""
+    if class_id is None:
+        return list(matches)
     return [
         match
         for match in matches
-        if match.prediction is None or match.prediction.confidence >= threshold
+        if (
+            match.prediction is not None
+            and match.prediction.class_id == class_id
+        ) or (
+            match.prediction is None
+            and match.ground_truth is not None
+            and match.ground_truth.class_id == class_id
+        )
     ]
+
+
+def _build_uniform_class_thresholds(
+    matches: list[Match],
+    threshold: float,
+    class_id: int | None,
+) -> dict[int, float]:
+    """Build a threshold mapping for either one class or all predicted classes."""
+    if class_id is not None:
+        return {class_id: float(threshold)}
+    return {match.prediction.class_id: float(threshold) for match in matches if match.prediction is not None}
 
 
 def _get_search_job_or_404(search_id: str) -> SearchJob:
@@ -1051,9 +1126,7 @@ def _get_semantic_search_source(source_type: str) -> BaseSemanticSearchSource:
     return source_cls()
 
 
-def _search_job_to_response(
-    search_job: SearchJob, include_results: bool = False
-) -> SemanticSearchStatusResponse:
+def _search_job_to_response(search_job: SearchJob, include_results: bool = False) -> SemanticSearchStatusResponse:
     results = None
     if include_results and search_job.status == "done":
         source = _get_semantic_search_source(search_job.source_type)
@@ -1064,9 +1137,7 @@ def _search_job_to_response(
             except FileNotFoundError as e:
                 logger.warning(f"Skipping semantic-search result, could not render preview: {e}")
                 continue
-            preview_data_url = (
-                f"data:{preview.media_type};base64,{base64.b64encode(preview.content).decode('ascii')}"
-            )
+            preview_data_url = f"data:{preview.media_type};base64,{base64.b64encode(preview.content).decode('ascii')}"
             results.append(
                 SemanticSearchResultDTO(
                     image_path=r.image_path,

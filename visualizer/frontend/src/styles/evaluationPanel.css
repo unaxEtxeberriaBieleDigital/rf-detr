@@ -47,6 +47,14 @@
   align-items: center;
 }
 
+.evaluation-panel__thresholds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
 .evaluation-panel__optimize select {
   min-width: 200px;
 }

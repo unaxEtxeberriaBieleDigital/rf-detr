@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { type ReductionAlgorithm, computeReduction, getJobRecords, loadJob } from "../api/client";
+import {
+  type ReductionAlgorithm,
+  computeReduction,
+  getJobOptimalThreshold,
+  getJobRecords,
+  loadJob,
+} from "../api/client";
 import EmbeddingPlot from "../components/EmbeddingPlot";
 import EvaluationPanel from "../components/EvaluationPanel";
 import FilterSidebar, { applyFilters, defaultFilterState } from "../components/FilterSidebar";
@@ -9,7 +15,7 @@ import ImageViewerModal from "../components/ImageViewerModal";
 import SemanticSearchPanel from "../components/SemanticSearchPanel";
 import MultiPanelLayout, { type PanelDefinition } from "../components/MultiPanelLayout";
 import { useAppConfig } from "../context/AppContext";
-import type { EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
+import type { ClassThresholds, EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
 import LoadingDiv from "../components/LoadingDiv";
 
 export default function VisualizerPage() {
@@ -28,6 +34,8 @@ export default function VisualizerPage() {
   );
 
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
+  const [classThresholds, setClassThresholds] = useState<ClassThresholds>({});
+  const [thresholdsLoading, setThresholdsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Dimensionality-reduction panel state
@@ -64,6 +72,9 @@ export default function VisualizerPage() {
   // Only re-run when the job changes (jobId), not on cosmetic config field updates.
   useEffect(() => {
     if (!config) return;
+    setThresholdsLoading(true);
+    setClassThresholds({});
+    setFilters(defaultFilterState());
     if (
       config.dimensionalityReductionComponents === 2
       || config.dimensionalityReductionComponents === 3
@@ -75,6 +86,7 @@ export default function VisualizerPage() {
       .then(async (all) => {
         setRecords(all);
         setPlotRecords(all);
+        await calculateOptimalClassThresholds(config.jobId, all);
       })
       .catch(async (e) => {
         if (!isJobNotFoundError(e)) {
@@ -84,9 +96,13 @@ export default function VisualizerPage() {
         const all = await getAllRecords(recoveredJobId);
         setRecords(all);
         setPlotRecords(all);
+        await calculateOptimalClassThresholds(recoveredJobId, all);
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setThresholdsLoading(false);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.jobId]);
 
@@ -101,6 +117,32 @@ export default function VisualizerPage() {
       offset += page.length;
     }
     return all;
+  }
+
+  async function calculateOptimalClassThresholds(
+    jobId: string,
+    allRecords: EmbeddingRecordDTO[],
+  ): Promise<void> {
+    const classIds = [...new Set(
+      allRecords
+        .map((record) => record.prediction?.class_id)
+        .filter((classId): classId is number => classId !== undefined),
+    )];
+    const results = await Promise.all(
+      classIds.map(async (classId) => {
+        const optimal = await getJobOptimalThreshold(jobId, "f1", 120, classId);
+        return [classId, optimal.threshold] as const;
+      }),
+    );
+    const nextThresholds = Object.fromEntries(results);
+    setClassThresholds(nextThresholds);
+    setFilters((current) => ({
+      ...current,
+      minConfidence: 0,
+      perClassConfidence: new Map(
+        Object.entries(nextThresholds).map(([classId, threshold]) => [Number(classId), threshold]),
+      ),
+    }));
   }
 
   async function handleComputeReduction(): Promise<void> {
@@ -172,6 +214,7 @@ export default function VisualizerPage() {
             splitFilter={gallerySplitFilter}
             filteredRecords={filteredRecords}
             minConfidence={filters.minConfidence}
+            classThresholds={classThresholds}
             categories={config.categories}
             modelPath={config.modelPath}
             modelType={config.modelType}
@@ -214,6 +257,8 @@ export default function VisualizerPage() {
         component: () => (
           <EvaluationPanel
             jobId={config.jobId}
+            classThresholds={classThresholds}
+            categories={config.categories}
           />
         ),
       },
@@ -232,6 +277,7 @@ export default function VisualizerPage() {
     algorithm,
     reductionRunning,
     reductionError,
+    classThresholds,
   ]);
 
   if (!config) return null;
@@ -276,7 +322,7 @@ export default function VisualizerPage() {
         {loading && <LoadingDiv />}
         {error && <p className="setup-error">{error}</p>}
 
-        {!loading && !error && (
+        {!loading && !thresholdsLoading && !error && (
           <div className="visualizer-content">
             <div className="visualizer-body">
               <MultiPanelLayout
@@ -323,6 +369,7 @@ export default function VisualizerPage() {
             : []
         }
         minConfidence={0}
+        classThresholds={classThresholds}
         categories={config.categories}
         modelPath={config.modelPath}
         modelType={config.modelType}
