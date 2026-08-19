@@ -142,6 +142,13 @@ class EvaluationMetricsResponse(PydanticModel):
     cached: bool
     calculated_at: str | None = None
     applied_class_thresholds: dict[int, float] | None = None
+    applied_record_ids: list[str] | None = None
+    applied_record_count: int | None = None
+
+
+class EvaluationRequest(PydanticModel):
+    class_thresholds: dict[int, float] | None = None
+    record_ids: list[str] | None = None
 
 
 class OptimalThresholdResponse(PydanticModel):
@@ -610,10 +617,10 @@ def get_job_records_by_image_paths(job_id: str, payload: RecordsByImagePathsRequ
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
-def get_job_evaluation(
+def _calculate_job_evaluation(
     job_id: str,
     class_thresholds: str | None = Query(default=None),
+    record_ids: str | None = Query(default=None),
 ) -> EvaluationMetricsResponse:
     """Compute or return cached evaluation metrics for this job."""
     try:
@@ -630,6 +637,7 @@ def get_job_evaluation(
             class_thresholds,
             allowed_class_ids=set(job.categories),
         )
+        normalized_record_ids = _parse_record_ids_query(record_ids)
 
         metric_definition_responses = [
             MetricDefinitionResponse(
@@ -641,7 +649,7 @@ def get_job_evaluation(
             for m in metric_defs
         ]
 
-        if normalized_class_thresholds is None:
+        if normalized_class_thresholds is None and normalized_record_ids is None:
             cached = job.store.get_cached_metrics(job.id, dataset_type)
             if cached is not None:
                 metrics, calculated_at = cached
@@ -653,11 +661,11 @@ def get_job_evaluation(
                     calculated_at=calculated_at,
                 )
 
-        matches = _load_matches_for_job(job)
+        matches, applied_record_ids = _load_matches_for_job(job, record_ids=normalized_record_ids)
         metrics = calculator.calculate(matches, class_thresholds=normalized_class_thresholds)
 
         calculated_at = None
-        if normalized_class_thresholds is None:
+        if normalized_class_thresholds is None and normalized_record_ids is None:
             job.store.cache_metrics(job.id, dataset_type, metrics)
             cached_after_write = job.store.get_cached_metrics(job.id, dataset_type)
             calculated_at = cached_after_write[1] if cached_after_write is not None else None
@@ -669,12 +677,37 @@ def get_job_evaluation(
             cached=False,
             calculated_at=calculated_at,
             applied_class_thresholds=normalized_class_thresholds,
+            applied_record_ids=applied_record_ids,
+            applied_record_count=(len(applied_record_ids) if applied_record_ids is not None else None),
         )
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("Evaluation endpoint failed", exc_info=True)
         raise HTTPException(500, f"Evaluation failed: {exc}") from exc
+
+
+@app.get("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
+def get_job_evaluation(
+    job_id: str,
+    class_thresholds: str | None = Query(default=None),
+    record_ids: str | None = Query(default=None),
+) -> EvaluationMetricsResponse:
+    """Compute evaluation metrics from optional URL-encoded filters."""
+    return _calculate_job_evaluation(job_id, class_thresholds, record_ids)
+
+
+@app.post("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
+def post_job_evaluation(
+    job_id: str,
+    request: EvaluationRequest,
+) -> EvaluationMetricsResponse:
+    """Compute evaluation metrics from filters sent in a JSON request body."""
+    class_thresholds = (
+        json.dumps(request.class_thresholds) if request.class_thresholds is not None else None
+    )
+    record_ids = json.dumps(request.record_ids) if request.record_ids is not None else None
+    return _calculate_job_evaluation(job_id, class_thresholds, record_ids)
 
 
 @app.get("/api/v1/jobs/{job_id}/optimal-threshold", response_model=OptimalThresholdResponse)
@@ -694,7 +727,7 @@ def get_optimal_threshold(
         calculator = _get_metrics_calculator_for_job(job, dataset_type)
         if class_id is not None and class_id not in job.categories:
             raise HTTPException(422, f"Unknown class_id '{class_id}' for this job.")
-        matches = _load_matches_for_job(job)
+        matches, _ = _load_matches_for_job(job)
         try:
             threshold = calculator.get_optimal_threshold(
                 metric_name=metric,
@@ -1016,9 +1049,14 @@ def _row_to_match(row: dict[str, Any]) -> Match:
     )
 
 
-def _load_matches_for_job(job: Job) -> list[Match]:
-    rows = job.store.get_evaluation_rows()
-    return [_row_to_match(row) for row in rows]
+def _load_matches_for_job(
+    job: Job,
+    record_ids: list[str] | None = None,
+) -> tuple[list[Match], list[str] | None]:
+    """Load evaluation matches for a job, optionally scoped to selected records."""
+    rows = job.store.get_evaluation_rows(record_ids=record_ids)
+    applied_record_ids = _validate_record_ids_selection(record_ids, rows)
+    return [_row_to_match(row) for row in rows], applied_record_ids
 
 
 def _parse_class_thresholds_query(
@@ -1080,6 +1118,59 @@ def _parse_class_thresholds_query(
     return normalized or None
 
 
+def _parse_record_ids_query(raw_record_ids: str | None) -> list[str] | None:
+    """Parse and normalize a JSON-encoded record-id selection."""
+    if raw_record_ids is None:
+        return None
+
+    try:
+        parsed = json.loads(raw_record_ids)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            422,
+            "Invalid record_ids: expected a JSON array of record id strings.",
+        ) from exc
+
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            422,
+            "Invalid record_ids: expected a JSON array of record id strings.",
+        )
+
+    normalized: list[str] = []
+    seen_record_ids: set[str] = set()
+    for raw_record_id in parsed:
+        if not isinstance(raw_record_id, str):
+            raise HTTPException(
+                422,
+                "Invalid record_ids: every entry must be a string.",
+            )
+        if raw_record_id not in seen_record_ids:
+            normalized.append(raw_record_id)
+            seen_record_ids.add(raw_record_id)
+
+    return normalized
+
+
+def _validate_record_ids_selection(
+    requested_record_ids: list[str] | None,
+    rows: list[dict[str, Any]],
+) -> list[str] | None:
+    """Validate that every requested record id exists in the evaluation store."""
+    if requested_record_ids is None:
+        return None
+
+    matched_record_ids = {str(row["id"]) for row in rows}
+    unknown_record_ids = [record_id for record_id in requested_record_ids if record_id not in matched_record_ids]
+    if unknown_record_ids:
+        raise HTTPException(
+            422,
+            f"Invalid record_ids: unknown record ids {unknown_record_ids}.",
+        )
+
+    return requested_record_ids
+
+
 def _filter_matches_for_threshold_optimization(
     matches: list[Match],
     class_id: int | None,
@@ -1090,14 +1181,8 @@ def _filter_matches_for_threshold_optimization(
     return [
         match
         for match in matches
-        if (
-            match.prediction is not None
-            and match.prediction.class_id == class_id
-        ) or (
-            match.prediction is None
-            and match.ground_truth is not None
-            and match.ground_truth.class_id == class_id
-        )
+        if (match.prediction is not None and match.prediction.class_id == class_id)
+        or (match.prediction is None and match.ground_truth is not None and match.ground_truth.class_id == class_id)
     ]
 
 

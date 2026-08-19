@@ -79,6 +79,9 @@ export interface EvaluationMetricsResponse {
   metric_definitions: MetricDefinitionDTO[];
   cached: boolean;
   calculated_at: string | null;
+  applied_class_thresholds: ClassThresholds | null;
+  applied_record_ids: string[] | null;
+  applied_record_count: number | null;
 }
 
 export type ClassThresholds = Record<number, number>;

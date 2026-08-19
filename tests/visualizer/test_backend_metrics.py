@@ -139,6 +139,102 @@ def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache
     assert cached_after_thresholded_payload["metrics"] == first_payload["metrics"]
 
 
+def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
+    client: TestClient,
+    finished_job: Job,
+) -> None:
+    first_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert first_payload["cached"] is False
+    assert first_payload["applied_record_ids"] is None
+    assert first_payload["applied_record_count"] is None
+
+    cached_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+
+    assert cached_response.status_code == 200
+    cached_payload = cached_response.json()
+    assert cached_payload["cached"] is True
+    assert cached_payload["metrics"] == first_payload["metrics"]
+
+    filtered_params = {"record_ids": '["tp-class-1", "fn-any-class"]'}
+    filtered_response = client.get(
+        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        params=filtered_params,
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()
+    assert filtered_payload["cached"] is False
+    assert filtered_payload["calculated_at"] is None
+    assert filtered_payload["applied_record_ids"] == ["tp-class-1", "fn-any-class"]
+    assert filtered_payload["applied_record_count"] == 2
+    assert filtered_payload["applied_class_thresholds"] is None
+    assert filtered_payload["metrics"]["precision"] == pytest.approx(1.0)
+    assert filtered_payload["metrics"]["recall"] == pytest.approx(0.5)
+    assert filtered_payload["metrics"] != first_payload["metrics"]
+
+    repeated_filtered_response = client.get(
+        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        params=filtered_params,
+    )
+
+    assert repeated_filtered_response.status_code == 200
+    repeated_filtered_payload = repeated_filtered_response.json()
+    assert repeated_filtered_payload["cached"] is False
+    assert repeated_filtered_payload["calculated_at"] is None
+    assert repeated_filtered_payload["metrics"] == filtered_payload["metrics"]
+
+    cached_after_filtered_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+
+    assert cached_after_filtered_response.status_code == 200
+    cached_after_filtered_payload = cached_after_filtered_response.json()
+    assert cached_after_filtered_payload["cached"] is True
+    assert cached_after_filtered_payload["metrics"] == first_payload["metrics"]
+
+
+def test_evaluation_combines_record_ids_and_class_thresholds(
+    client: TestClient,
+    finished_job: Job,
+) -> None:
+    response = client.get(
+        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        params={
+            "record_ids": '["tp-class-1", "fp-class-1", "fn-any-class"]',
+            "class_thresholds": '{"1": 0.5}',
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cached"] is False
+    assert payload["calculated_at"] is None
+    assert payload["applied_record_ids"] == ["tp-class-1", "fp-class-1", "fn-any-class"]
+    assert payload["applied_record_count"] == 3
+    assert payload["applied_class_thresholds"] == {"1": 0.5}
+    assert payload["metrics"]["precision"] == pytest.approx(1.0)
+    assert payload["metrics"]["recall"] == pytest.approx(0.5)
+
+
+def test_evaluation_accepts_large_filter_payload_as_json_body(
+    client: TestClient,
+    finished_job: Job,
+) -> None:
+    response = client.post(
+        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        json={
+            "record_ids": ["tp-class-1", "fn-any-class"],
+            "class_thresholds": {"1": 0.5},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["applied_record_count"] == 2
+    assert payload["metrics"]["precision"] == pytest.approx(1.0)
+
+
 def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, finished_job: Job) -> None:
     class_one_response = client.get(
         f"/api/v1/jobs/{finished_job.id}/optimal-threshold",
@@ -171,6 +267,18 @@ def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, 
             "Invalid class_thresholds: unknown class_id '999'.",
         ),
         (
+            {"record_ids": '{"tp-class-1": true}'},
+            "Invalid record_ids: expected a JSON array of record id strings.",
+        ),
+        (
+            {"record_ids": '["tp-class-1", 1]'},
+            "Invalid record_ids: every entry must be a string.",
+        ),
+        (
+            {"record_ids": '["missing-record"]'},
+            "Invalid record_ids: unknown record ids ['missing-record'].",
+        ),
+        (
             {"metric": "f1", "num_thresholds": 11, "class_id": 999},
             "Unknown class_id '999' for this job.",
         ),
@@ -182,7 +290,7 @@ def test_threshold_endpoints_validate_class_inputs(
     params: dict[str, int | str],
     expected_detail: str,
 ) -> None:
-    route = "/evaluation" if "class_thresholds" in params else "/optimal-threshold"
+    route = "/evaluation" if {"class_thresholds", "record_ids"} & set(params) else "/optimal-threshold"
 
     response = client.get(f"/api/v1/jobs/{finished_job.id}{route}", params=params)
 

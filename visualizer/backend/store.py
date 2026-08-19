@@ -892,16 +892,31 @@ class JobStore:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_dto(r) for r in rows]
 
-    def get_evaluation_rows(self) -> list[dict[str, Any]]:
+    def get_evaluation_rows(
+        self,
+        record_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return compact rows required to compute evaluation metrics.
 
+        To avoid SQLite's parameter limit on large ``IN (...)`` filters, filtered
+        requests load the compact row projection once and apply any record-id
+        selection in Python.
+
+        Args:
+            record_ids: Optional subset of record ids to restrict evaluation to.
+
         Returns:
-            List of dictionaries with status, predicted class/confidence and ground-truth class.
+            List of dictionaries with record id, status, predicted
+            class/confidence and ground-truth class.
         """
+        if record_ids is not None and not record_ids:
+            return []
+
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT
+                    id,
                     status,
                     pred_class_id,
                     pred_confidence,
@@ -912,6 +927,9 @@ class JobStore:
                 FROM records
                 """
             ).fetchall()
+        if record_ids is not None:
+            id_set = set(record_ids)
+            rows = [row for row in rows if row["id"] in id_set]
         return [dict(row) for row in rows]
 
     def get_image_path_for_record(self, record_id: str) -> str | None:

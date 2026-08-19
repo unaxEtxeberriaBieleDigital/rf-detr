@@ -17,6 +17,8 @@ const Plot = createPlotlyComponent(Plotly);
 interface EvaluationPanelProps {
   jobId: string;
   classThresholds: ClassThresholds;
+  evaluationThresholds: ClassThresholds;
+  recordIds: string[];
   categories: Record<number, string>;
 }
 
@@ -45,18 +47,25 @@ function asMatrix(value: unknown): number[][] {
     .map((row) => row.map((cell) => Number(cell)));
 }
 
-export default function EvaluationPanel({ jobId, classThresholds, categories }: EvaluationPanelProps) {
+export default function EvaluationPanel({
+  jobId,
+  classThresholds,
+  evaluationThresholds,
+  recordIds,
+  categories,
+}: EvaluationPanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationMetricsResponse | null>(null);
   const [optimal, setOptimal] = useState<OptimalThresholdResponse | null>(null);
   const [optimizing, setOptimizing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState("f1");
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getJobEvaluation(jobId, classThresholds)
+    getJobEvaluation(jobId, evaluationThresholds, recordIds)
       .then((resp) => {
         setEvaluation(resp);
       })
@@ -64,7 +73,20 @@ export default function EvaluationPanel({ jobId, classThresholds, categories }: 
         setError(String(e instanceof Error ? e.message : e));
       })
       .finally(() => setLoading(false));
-  }, [jobId, classThresholds]);
+  }, [jobId]);
+
+  async function handleRecalculateWithFilters(): Promise<void> {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const response = await getJobEvaluation(jobId, evaluationThresholds, recordIds);
+      setEvaluation(response);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const metricByName = useMemo(() => {
     const map = new Map<string, MetricDefinitionDTO>();
@@ -135,6 +157,9 @@ export default function EvaluationPanel({ jobId, classThresholds, categories }: 
         <span>Dataset: <code>{evaluation.dataset_type}</code></span>
         <span>{evaluation.cached ? "cacheado" : "calculado ahora"}</span>
         {evaluation.calculated_at && <span>{evaluation.calculated_at}</span>}
+        {evaluation.applied_record_count !== null && (
+          <span>Registros filtrados: {evaluation.applied_record_count}</span>
+        )}
       </div>
 
       <div className="evaluation-panel__cards">
@@ -147,6 +172,13 @@ export default function EvaluationPanel({ jobId, classThresholds, categories }: 
       </div>
 
       <div className="evaluation-panel__optimize">
+        <button
+          className="secondary"
+          onClick={() => void handleRecalculateWithFilters()}
+          disabled={refreshing}
+        >
+          {refreshing ? "Recalculando..." : "Recalcular con filtros aplicados"}
+        </button>
         <label>Umbrales óptimos por clase (F1)</label>
         <div className="evaluation-panel__thresholds">
           {Object.entries(classThresholds).map(([classId, threshold]) => (

@@ -170,9 +170,21 @@ export function getSemanticSearch(jobId: string, searchId: string): Promise<Sema
 export function getJobEvaluation(
   jobId: string,
   classThresholds?: Record<number, number>,
+  recordIds?: string[],
 ): Promise<EvaluationMetricsResponse> {
+  if (recordIds) {
+    return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        class_thresholds: classThresholds ?? null,
+        record_ids: recordIds,
+      }),
+    });
+  }
   const search = new URLSearchParams();
   if (classThresholds) search.set("class_thresholds", JSON.stringify(classThresholds));
+  if (recordIds) search.set("record_ids", JSON.stringify(recordIds));
   const suffix = search.toString() ? `?${search.toString()}` : "";
   return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation${suffix}`);
 }

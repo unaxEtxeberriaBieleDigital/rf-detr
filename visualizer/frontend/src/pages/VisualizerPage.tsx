@@ -185,6 +185,21 @@ export default function VisualizerPage() {
     return base.filter((r) => clusterSelection.has(r.id));
   }, [records, filters, clusterSelection]);
 
+  const filteredRecordIds = useMemo(
+    () => filteredRecords.map((record) => record.id),
+    [filteredRecords],
+  );
+
+  const evaluationThresholds = useMemo<ClassThresholds>(() => {
+    const thresholds: ClassThresholds = {};
+    for (const classId of Object.keys(config?.categories ?? {})) {
+      const numericClassId = Number(classId);
+      thresholds[numericClassId] =
+        filters.perClassConfidence.get(numericClassId) ?? filters.minConfidence;
+    }
+    return thresholds;
+  }, [config?.categories, filters.minConfidence, filters.perClassConfidence]);
+
   const gallerySplitFilter = useMemo(() => {
     if (filters.visibleSplits.size === 1) return Array.from(filters.visibleSplits)[0];
     return "all";
@@ -258,6 +273,8 @@ export default function VisualizerPage() {
           <EvaluationPanel
             jobId={config.jobId}
             classThresholds={classThresholds}
+            evaluationThresholds={evaluationThresholds}
+            recordIds={filteredRecordIds}
             categories={config.categories}
           />
         ),
@@ -278,6 +295,8 @@ export default function VisualizerPage() {
     reductionRunning,
     reductionError,
     classThresholds,
+    evaluationThresholds,
+    filteredRecordIds,
   ]);
 
   if (!config) return null;
