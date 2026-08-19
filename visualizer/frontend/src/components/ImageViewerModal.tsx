@@ -174,7 +174,7 @@ export default function ImageViewerModal({
     setSearchK(DEFAULT_SEARCH_K);
     setSearchSourceType("default");
     setStartError(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, imagePath]);
 
   useEffect(() => {
@@ -267,158 +267,158 @@ export default function ImageViewerModal({
             </button>
           )}
 
-        <aside className="iv-sidebar">
-          <div className="iv-sidebar-section">
-            <div className="iv-sidebar-title">Filtro interno</div>
-            <label className="iv-check-row">
-              <input
-                type="checkbox"
-                checked={useGlobalFilters}
-                onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
-              />
-              Usar filtros actuales ({minConfidence.toFixed(2)})
-            </label>
-            <div className="iv-conf-row">
-              <label htmlFor="iv-local-conf" className="iv-conf-label">
-                Confianza mínima: {effectiveMinConfidence.toFixed(2)}
+          <aside className="iv-sidebar">
+            <div className="iv-sidebar-section">
+              <div className="iv-sidebar-title">Filtro interno</div>
+              <label className="iv-check-row">
+                <input
+                  type="checkbox"
+                  checked={useGlobalFilters}
+                  onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
+                />
+                Usar filtros actuales ({minConfidence.toFixed(2)})
               </label>
-              <input
-                id="iv-local-conf"
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={effectiveMinConfidence}
-                disabled={useGlobalFilters}
-                onChange={(e) => setLocalMinConfidence(Number(e.currentTarget.value))}
-                className="iv-slider"
-              />
+              <div className="iv-conf-row">
+                <label htmlFor="iv-local-conf" className="iv-conf-label">
+                  Confianza mínima: {effectiveMinConfidence.toFixed(2)}
+                </label>
+                <input
+                  id="iv-local-conf"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={effectiveMinConfidence}
+                  disabled={useGlobalFilters}
+                  onChange={(e) => setLocalMinConfidence(Number(e.currentTarget.value))}
+                  className="iv-slider"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="iv-sidebar-section">
-            <div className="iv-sidebar-title">Ground Truth ({gtCount})</div>
-            {gtCount === 0 && <p className="iv-empty">Sin anotaciones GT.</p>}
-            <ul className="iv-list">
-              {groundTruthRecords.map((r, i) => {
-                const classId = r.ground_truth?.class_id;
-                const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
-                return (
-                  <li key={`gt-${r.id}-${i}`} className="iv-list-item">
-                    <span className="iv-dot" style={{ background: GT_COLOR }} />
-                    <span className="iv-list-label" title={label}>
-                      {label}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          <div className="iv-sidebar-section">
-            <div className="iv-sidebar-title">Defectos ({predCount})</div>
-            {predCount === 0 && <p className="iv-empty">Sin predicciones por encima del umbral.</p>}
-            <ul className="iv-list">
-              {defectRecords.map((r) => {
-                const classId = r.prediction?.class_id;
-                const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
-                const color = STATUS_COLORS[r.status] ?? "#ef6c00";
-                const selected = r.id === searchRecordId;
-                if (!allowSearch) {
+            <div className="iv-sidebar-section">
+              <div className="iv-sidebar-title">Ground Truth ({gtCount})</div>
+              {gtCount === 0 && <p className="iv-empty">Sin anotaciones GT.</p>}
+              <ul className="iv-list">
+                {groundTruthRecords.map((r, i) => {
+                  const classId = r.ground_truth?.class_id;
+                  const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
                   return (
-                    <li key={`pred-${r.id}`} className="iv-list-item">
-                      <span className="iv-dot" style={{ background: color }} />
+                    <li key={`gt-${r.id}-${i}`} className="iv-list-item">
+                      <span className="iv-dot" style={{ background: GT_COLOR }} />
                       <span className="iv-list-label" title={label}>
                         {label}
-                      </span>
-                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
-                      <span className="iv-status-badge" style={{ color }}>
-                        {STATUS_LABELS[r.status] ?? r.status}
                       </span>
                     </li>
                   );
-                }
-                return (
-                  <li key={`pred-${r.id}`}>
-                    <button
-                      type="button"
-                      className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
-                      title="Buscar detecciones similares a esta"
-                      onClick={() =>
-                        setSearchRecordId((current) => (current === r.id ? null : r.id))
-                      }
-                    >
-                      <span className="iv-dot" style={{ background: color }} />
-                      <span className="iv-list-label" title={label}>
-                        {label}
-                      </span>
-                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
-                      <span className="iv-status-badge" style={{ color }}>
-                        {STATUS_LABELS[r.status] ?? r.status}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {allowSearch && searchRecord && (
-            <div className="iv-sidebar-section ss-sidebar-section">
-              <div className="iv-sidebar-title">Buscar similares</div>
-              <p className="iv-empty">
-                Predicción:{" "}
-                {searchRecord.prediction?.class_id !== undefined
-                  ? categories[searchRecord.prediction.class_id] ?? `Clase ${searchRecord.prediction.class_id}`
-                  : "—"}{" "}
-                ({searchRecord.prediction?.confidence.toFixed(2)})
-              </p>
-              <label className="ss-field">
-                Carpeta donde buscar
-                <div className="ss-folder-row">
-                  <input
-                    type="text"
-                    placeholder="C:\ruta\a\una\carpeta"
-                    value={searchFolder}
-                    onChange={(e) => setSearchFolder(e.currentTarget.value)}
-                  />
-                  <button type="button" className="image-viewer-btn" onClick={pickSearchFolder}>
-                    Elegir...
-                  </button>
-                </div>
-              </label>
-              <label className="ss-field">
-                Nº de vecinos más cercanos (k)
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={searchK}
-                  onChange={(e) => setSearchK(Math.max(1, Number(e.currentTarget.value)))}
-                />
-              </label>
-              <label className="ss-field">
-                Tipo de búsqueda
-                <select
-                  value={searchSourceType}
-                  onChange={(e) => setSearchSourceType(e.currentTarget.value as "default" | "tiled")}
-                >
-                  <option value="default">Default — una imagen completa por unidad</option>
-                  <option value="tiled">Tiled — divide imágenes grandes en teselas</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                className="pca-btn"
-                disabled={!searchFolder.trim() || starting}
-                onClick={handleStartSearch}
-              >
-                {starting ? "Iniciando..." : "Buscar"}
-              </button>
-              {startError && <p className="setup-error">{startError}</p>}
+                })}
+              </ul>
             </div>
-          )}
-        </aside>
+
+            <div className="iv-sidebar-section">
+              <div className="iv-sidebar-title">Defectos ({predCount})</div>
+              {predCount === 0 && <p className="iv-empty">Sin predicciones por encima del umbral.</p>}
+              <ul className="iv-list">
+                {defectRecords.map((r) => {
+                  const classId = r.prediction?.class_id;
+                  const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
+                  const color = STATUS_COLORS[r.status] ?? "#ef6c00";
+                  const selected = r.id === searchRecordId;
+                  if (!allowSearch) {
+                    return (
+                      <li key={`pred-${r.id}`} className="iv-list-item">
+                        <span className="iv-dot" style={{ background: color }} />
+                        <span className="iv-list-label" title={label}>
+                          {label}
+                        </span>
+                        <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                        <span className="iv-status-badge" style={{ color }}>
+                          {STATUS_LABELS[r.status] ?? r.status}
+                        </span>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={`pred-${r.id}`}>
+                      <button
+                        type="button"
+                        className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
+                        title="Buscar detecciones similares a esta"
+                        onClick={() =>
+                          setSearchRecordId((current) => (current === r.id ? null : r.id))
+                        }
+                      >
+                        <span className="iv-dot" style={{ background: color }} />
+                        <span className="iv-list-label" title={label}>
+                          {label}
+                        </span>
+                        <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                        <span className="iv-status-badge" style={{ color }}>
+                          {STATUS_LABELS[r.status] ?? r.status}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {allowSearch && searchRecord && (
+              <div className="iv-sidebar-section ss-sidebar-section">
+                <div className="iv-sidebar-title">Buscar similares</div>
+                <p className="iv-empty">
+                  Predicción:{" "}
+                  {searchRecord.prediction?.class_id !== undefined
+                    ? categories[searchRecord.prediction.class_id] ?? `Clase ${searchRecord.prediction.class_id}`
+                    : "—"}{" "}
+                  ({searchRecord.prediction?.confidence.toFixed(2)})
+                </p>
+                <label className="ss-field">
+                  Carpeta donde buscar
+                  <div className="ss-folder-row">
+                    <input
+                      type="text"
+                      placeholder="C:\ruta\a\una\carpeta"
+                      value={searchFolder}
+                      onChange={(e) => setSearchFolder(e.currentTarget.value)}
+                    />
+                    <button type="button" className="image-viewer-btn" onClick={pickSearchFolder}>
+                      Elegir...
+                    </button>
+                  </div>
+                </label>
+                <label className="ss-field">
+                  Nº de vecinos más cercanos (k)
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={searchK}
+                    onChange={(e) => setSearchK(Math.max(1, Number(e.currentTarget.value)))}
+                  />
+                </label>
+                <label className="ss-field">
+                  Tipo de búsqueda
+                  <select
+                    value={searchSourceType}
+                    onChange={(e) => setSearchSourceType(e.currentTarget.value as "default" | "tiled")}
+                  >
+                    <option value="default">Default — una imagen completa por unidad</option>
+                    <option value="tiled">Tiled — divide imágenes grandes en teselas</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="pca-btn"
+                  disabled={!searchFolder.trim() || starting}
+                  onClick={handleStartSearch}
+                >
+                  {starting ? "Iniciando..." : "Buscar"}
+                </button>
+                {startError && <p className="setup-error">{startError}</p>}
+              </div>
+            )}
+          </aside>
         </div>
       </div>
     </div>
