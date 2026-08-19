@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { type ReductionAlgorithm, computeReduction, getJobRecords } from "../api/client";
+import { type ReductionAlgorithm, computeReduction, getJobRecords, loadJob } from "../api/client";
 import EmbeddingPlot from "../components/EmbeddingPlot";
+import EvaluationPanel from "../components/EvaluationPanel";
 import FilterSidebar, { applyFilters, defaultFilterState } from "../components/FilterSidebar";
 import type { FilterState } from "../components/FilterSidebar";
 import ImageGallery from "../components/ImageGallery";
 import ImageViewerModal from "../components/ImageViewerModal";
 import SemanticSearchPanel from "../components/SemanticSearchPanel";
+import MultiPanelLayout, { type PanelDefinition } from "../components/MultiPanelLayout";
 import { useAppConfig } from "../context/AppContext";
 import type { EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
 import LoadingDiv from "../components/LoadingDiv";
@@ -41,6 +43,24 @@ export default function VisualizerPage() {
   // null = no selection active (gallery shows everything that passes the other filters).
   const [clusterSelection, setClusterSelection] = useState<Set<string> | null>(null);
 
+  function isJobNotFoundError(err: unknown): boolean {
+    const text = String(err instanceof Error ? err.message : err).toLowerCase();
+    return text.includes("job not found") || text.includes("failed (404)");
+  }
+
+  async function recoverJobForDataset(): Promise<string> {
+    if (!config) throw new Error("No config available to recover job.");
+    const recovered = await loadJob(config.datasetPath);
+    setConfig({
+      ...config,
+      jobId: recovered.id,
+      categories: recovered.categories,
+      hasDimensionalityReduction: recovered.has_dimensionality_reduction,
+      dimensionalityReductionComponents: recovered.dimensionality_reduction_components,
+    });
+    return recovered.id;
+  }
+
   // Only re-run when the job changes (jobId), not on cosmetic config field updates.
   useEffect(() => {
     if (!config) return;
@@ -52,7 +72,16 @@ export default function VisualizerPage() {
     }
     setLoading(true);
     getAllRecords(config.jobId)
-      .then((all) => {
+      .then(async (all) => {
+        setRecords(all);
+        setPlotRecords(all);
+      })
+      .catch(async (e) => {
+        if (!isJobNotFoundError(e)) {
+          throw e;
+        }
+        const recoveredJobId = await recoverJobForDataset();
+        const all = await getAllRecords(recoveredJobId);
         setRecords(all);
         setPlotRecords(all);
       })
@@ -80,13 +109,21 @@ export default function VisualizerPage() {
     setReductionError(null);
     try {
       const ids = filteredRecords.map((r) => r.id);
-      await computeReduction(config.jobId, pcaDims, algorithm, ids);
+      let activeJobId = config.jobId;
+      try {
+        await computeReduction(activeJobId, pcaDims, algorithm, ids);
+      } catch (e) {
+        if (!isJobNotFoundError(e)) throw e;
+        activeJobId = await recoverJobForDataset();
+        await computeReduction(activeJobId, pcaDims, algorithm, ids);
+      }
       setConfig({
         ...config,
+        jobId: activeJobId,
         hasDimensionalityReduction: true,
         dimensionalityReductionComponents: pcaDims,
       });
-      const refreshed = await getAllRecords(config.jobId);
+      const refreshed = await getAllRecords(activeJobId);
       setRecords(refreshed);
       const refreshedIds = new Set(ids);
       setPlotRecords(refreshed.filter((r) => refreshedIds.has(r.id)));
@@ -120,6 +157,82 @@ export default function VisualizerPage() {
     const sample = plotRecords.find((r) => r.embedding && r.embedding.length <= 3);
     return sample?.embedding?.length ?? null;
   }, [plotRecords]);
+
+  // Panel definitions for the multi-panel layout
+  const panelDefinitions = useMemo((): PanelDefinition[] => {
+    if (!config) return [];
+    
+    return [
+      {
+        id: "gallery",
+        title: "Galería de Imágenes",
+        component: () => (
+          <ImageGallery
+            jobId={config.jobId}
+            splitFilter={gallerySplitFilter}
+            filteredRecords={filteredRecords}
+            minConfidence={filters.minConfidence}
+            categories={config.categories}
+            modelPath={config.modelPath}
+            modelType={config.modelType}
+            selectedImagePath={selectedImagePath}
+            onSelectImage={(imagePath) => {
+              const first = filteredRecords.find((r) => r.image_path === imagePath);
+              setSelectedRecordId(first?.id ?? null);
+            }}
+            onSearchStarted={setActiveSearchId}
+          />
+        ),
+      },
+      {
+        id: "embedding",
+        title: "Gráfico de Embeddings",
+        component: () => (
+          <EmbeddingPlot
+            records={plotRecords}
+            dimensions={pcaDims}
+            categories={config.categories}
+            selectedRecordId={selectedRecordId}
+            clusterSelection={clusterSelection}
+            onSelectRecord={setSelectedRecordId}
+            onClusterSelectionChange={setClusterSelection}
+            activePcaDims={activePcaDims}
+            algorithm={algorithm}
+            pcaDims={pcaDims}
+            reductionRunning={reductionRunning}
+            reductionError={reductionError}
+            onAlgorithmChange={setAlgorithm}
+            onPcaDimsChange={setPcaDims}
+            onComputeReduction={handleComputeReduction}
+            onClearClusterSelection={() => setClusterSelection(null)}
+          />
+        ),
+      },
+      {
+        id: "evaluation",
+        title: "Evaluación del Modelo",
+        component: () => (
+          <EvaluationPanel
+            jobId={config.jobId}
+          />
+        ),
+      },
+    ];
+  }, [
+    config,
+    gallerySplitFilter,
+    filteredRecords,
+    filters.minConfidence,
+    selectedImagePath,
+    plotRecords,
+    pcaDims,
+    selectedRecordId,
+    clusterSelection,
+    activePcaDims,
+    algorithm,
+    reductionRunning,
+    reductionError,
+  ]);
 
   if (!config) return null;
 
@@ -165,46 +278,11 @@ export default function VisualizerPage() {
 
         {!loading && !error && (
           <div className="visualizer-content">
-
             <div className="visualizer-body">
-              <section className="visualizer-gallery">
-                <ImageGallery
-                  jobId={config.jobId}
-                  splitFilter={gallerySplitFilter}
-                  filteredRecords={filteredRecords}
-                  minConfidence={filters.minConfidence}
-                  categories={config.categories}
-                  modelPath={config.modelPath}
-                  modelType={config.modelType}
-                  selectedImagePath={selectedImagePath}
-                  onSelectImage={(imagePath) => {
-                    const first = filteredRecords.find((r) => r.image_path === imagePath);
-                    setSelectedRecordId(first?.id ?? null);
-                  }}
-                  onSearchStarted={setActiveSearchId}
-                />
-              </section>
-
-              <section className="visualizer-plot">
-                <EmbeddingPlot
-                  records={plotRecords}
-                  dimensions={pcaDims}
-                  categories={config.categories}
-                  selectedRecordId={selectedRecordId}
-                  clusterSelection={clusterSelection}
-                  onSelectRecord={setSelectedRecordId}
-                  onClusterSelectionChange={setClusterSelection}
-                  activePcaDims={activePcaDims}
-                  algorithm={algorithm}
-                  pcaDims={pcaDims}
-                  reductionRunning={reductionRunning}
-                  reductionError={reductionError}
-                  onAlgorithmChange={setAlgorithm}
-                  onPcaDimsChange={setPcaDims}
-                  onComputeReduction={handleComputeReduction}
-                  onClearClusterSelection={() => setClusterSelection(null)}
-                />
-              </section>
+              <MultiPanelLayout
+                initialVisiblePanels={[panelDefinitions[0]]}
+                availablePanels={panelDefinitions}
+              />
 
               {activeSearchId && (
                 <SemanticSearchPanel

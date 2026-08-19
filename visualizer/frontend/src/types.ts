@@ -24,6 +24,8 @@ export interface JobStatusResponse {
   categories: Record<number, string>;
   num_images_total: number;
   num_images_processed: number;
+  num_images_remaining: number;
+  can_resume: boolean;
   has_dimensionality_reduction: boolean;
   dimensionality_reduction_components: number | null;
 }
@@ -44,6 +46,7 @@ export interface CreateJobRequest {
   splits?: string[] | null;
   batch_size?: number;
   iou_threshold?: number;
+  resume?: boolean;
 }
 
 export interface CheckDatasetResponse {
@@ -52,11 +55,38 @@ export interface CheckDatasetResponse {
   has_dimensionality_reduction: boolean;
   dimensionality_reduction_components: number | null;
   status: string | null;
+  num_images_total: number;
+  num_images_processed: number;
+  num_images_remaining: number;
+  can_resume: boolean;
 }
 
 export interface DimensionalityReductionStatusResponse {
   updated: number;
   components: number;
+}
+
+export interface MetricDefinitionDTO {
+  name: string;
+  display_name: string;
+  description: string;
+  metric_type: "scalar" | "curve" | "matrix";
+}
+
+export interface EvaluationMetricsResponse {
+  dataset_type: string;
+  metrics: Record<string, unknown>;
+  metric_definitions: MetricDefinitionDTO[];
+  cached: boolean;
+  calculated_at: string | null;
+}
+
+export interface OptimalThresholdResponse {
+  dataset_type: string;
+  metric_name: string;
+  threshold: number;
+  metric_value: number;
+  num_thresholds: number;
 }
 
 export interface SemanticSearchResultDTO {

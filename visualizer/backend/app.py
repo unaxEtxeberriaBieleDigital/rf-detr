@@ -25,6 +25,7 @@ import json
 import threading
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,8 +36,17 @@ from rfdetr.utilities.logger import get_logger
 
 from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
-from visualizer.backend.jobs import JOB_STORE, Job, run_job
+from visualizer.backend.evaluator import Match
+from visualizer.backend.jobs import (
+    JOB_STORE,
+    Job,
+    release_active_job,
+    run_job,
+    try_register_active_job,
+)
+from visualizer.backend.metrics import get_metrics_for_dataset
 from visualizer.backend.models import rfdetr  # noqa: F401
+from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
@@ -68,6 +78,7 @@ class JobRequest(PydanticModel):
     splits: list[str] | None = None
     batch_size: int = 8
     iou_threshold: float = 0.5
+    resume: bool = False
 
 
 class LoadJobRequest(PydanticModel):
@@ -82,6 +93,8 @@ class JobStatusResponse(PydanticModel):
     categories: dict[int, str] = {}
     num_images_total: int = 0
     num_images_processed: int = 0
+    num_images_remaining: int = 0
+    can_resume: bool = False
     has_dimensionality_reduction: bool = False
     dimensionality_reduction_components: int | None = None
 
@@ -105,11 +118,38 @@ class CheckDatasetResponse(PydanticModel):
     has_dimensionality_reduction: bool = False
     dimensionality_reduction_components: int | None = None
     status: str | None = None
+    num_images_total: int = 0
+    num_images_processed: int = 0
+    num_images_remaining: int = 0
+    can_resume: bool = False
 
 
 class DimensionalityReductionStatusResponse(PydanticModel):
     updated: int
     components: int
+
+
+class MetricDefinitionResponse(PydanticModel):
+    name: str
+    display_name: str
+    description: str
+    metric_type: str
+
+
+class EvaluationMetricsResponse(PydanticModel):
+    dataset_type: str
+    metrics: dict[str, Any]
+    metric_definitions: list[MetricDefinitionResponse]
+    cached: bool
+    calculated_at: str | None = None
+
+
+class OptimalThresholdResponse(PydanticModel):
+    dataset_type: str
+    metric_name: str
+    threshold: float
+    metric_value: float
+    num_thresholds: int
 
 
 class SemanticSearchRequest(PydanticModel):
@@ -210,12 +250,19 @@ def check_dataset(path: str) -> CheckDatasetResponse:
     status = store.get_meta("status")
     components = store.dimensionality_reduction_components()
     has_reduction = store.has_dimensionality_reduction()
+    num_images_total = int(store.get_meta("num_images_total") or 0)
+    num_images_processed = int(store.get_meta("num_images_processed") or 0)
+    can_resume = _store_can_resume(store, status)
     return CheckDatasetResponse(
         has_db=True,
         num_records=store.record_count(),
         has_dimensionality_reduction=has_reduction,
         dimensionality_reduction_components=components,
         status=status,
+        num_images_total=num_images_total,
+        num_images_processed=num_images_processed,
+        num_images_remaining=_num_images_remaining(num_images_total, num_images_processed),
+        can_resume=can_resume,
     )
 
 
@@ -229,7 +276,8 @@ def create_job(request: JobRequest) -> JobStatusResponse:
     """Create and start a new inference job.
 
     Inference results are written to ``rfdetr_visualizer.db`` in the dataset
-    root, replacing any existing DB at that path.
+    root. Fresh runs overwrite prior inference artifacts; ``resume=True``
+    continues an interrupted compatible run in the existing DB.
 
     Args:
         request: Job creation parameters.
@@ -255,7 +303,6 @@ def create_job(request: JobRequest) -> JobStatusResponse:
 
     try:
         dataset = dataset_cls(request.dataset_path)
-        model = model_cls(request.model_path)
         splits = (
             [_parse_split(name) for name in request.splits]
             if request.splits
@@ -263,33 +310,123 @@ def create_job(request: JobRequest) -> JobStatusResponse:
         )
     except Exception as e:
         logger.error(
-            f"Could not initialise dataset/model for a new job: {e}", exc_info=True
+            f"Could not initialise dataset for a new job: {e}", exc_info=True
         )
-        raise HTTPException(400, f"Could not initialise dataset/model: {e}") from e
+        raise HTTPException(400, f"Could not initialise dataset: {e}") from e
 
+    db_already_exists = JobStore.db_exists(request.dataset_path)
+    if request.resume and not db_already_exists:
+        raise HTTPException(
+            409,
+            "Resume was requested, but no existing visualizer DB was found for this dataset.",
+        )
     store = JobStore(request.dataset_path)
     store.create_tables()
-    store.set_meta("dataset_path", request.dataset_path)
-    store.set_meta("categories", json.dumps(dataset.categories))
+    split_names = [split.name for split in splits]
+    requested_run_config = _build_run_config(request, split_names)
+    job_id = str(uuid.uuid4())
 
-    job = Job(id=str(uuid.uuid4()), store=store)
-    job.categories = dataset.categories
-    JOB_STORE[job.id] = job
+    existing_active_job_id = try_register_active_job(request.dataset_path, job_id)
+    if existing_active_job_id is not None:
+        active_job = JOB_STORE.get(existing_active_job_id)
+        if active_job is None:
+            release_active_job(request.dataset_path, existing_active_job_id)
+            existing_active_job_id = try_register_active_job(request.dataset_path, job_id)
+            active_job = JOB_STORE.get(existing_active_job_id) if existing_active_job_id else None
+        if existing_active_job_id is not None:
+            if request.resume and store.get_run_config() == requested_run_config and active_job is not None:
+                return _job_to_response(active_job)
+            raise HTTPException(
+                409,
+                f"An inference job is already running for this dataset (job_id={existing_active_job_id}).",
+            )
 
-    logger.info(
-        f"Created job {job.id}: dataset_type='{request.dataset_type}' "
-        f"({request.dataset_path}), model_type='{request.model_type}' "
-        f"({request.model_path})"
-    )
+    try:
+        if request.resume:
+            if not store.has_progress_tracking():
+                raise HTTPException(
+                    409,
+                    "Resume was requested, but this DB does not support persisted progress. "
+                    "Start a fresh run instead.",
+                )
 
-    thread = threading.Thread(
-        target=run_job,
-        args=(job, dataset, model, splits, request.batch_size, request.iou_threshold),
-        daemon=True,
-    )
-    thread.start()
+            stored_status = store.get_meta("status")
+            if stored_status == "done":
+                raise HTTPException(
+                    409,
+                    "Resume was requested, but the stored run is already complete. "
+                    "Load it or start a fresh run instead.",
+                )
+            if stored_status not in {"pending", "running", "error"}:
+                raise HTTPException(
+                    409,
+                    "Resume was requested, but no interrupted run state was found in this DB.",
+                )
 
-    return JobStatusResponse(id=job.id, status=job.status)
+            stored_run_config = store.get_run_config()
+            if stored_run_config != requested_run_config:
+                raise HTTPException(
+                    409,
+                    "Resume configuration does not match the interrupted run. "
+                    "Use the same dataset_type, model_path, model_type, splits, batch_size, and iou_threshold.",
+                )
+            num_images_total = int(store.get_meta("num_images_total") or 0)
+            num_images_processed = store.processed_image_count(split_names=split_names)
+        else:
+            store.reset_for_rerun()
+            num_images_total = 0
+            num_images_processed = 0
+
+        store.set_meta("dataset_path", request.dataset_path)
+        store.set_meta("dataset_type", request.dataset_type)
+        store.set_meta("model_path", request.model_path)
+        store.set_meta("model_type", request.model_type)
+        store.set_meta("categories", dataset.categories)
+        store.set_run_config(requested_run_config)
+        store.enable_progress_tracking()
+        store.set_meta("status", "pending")
+        store.set_meta("error", None)
+        store.set_meta("num_images_total", num_images_total)
+        store.set_meta("num_images_processed", num_images_processed)
+
+        try:
+            model = model_cls(request.model_path)
+        except Exception as e:
+            logger.error(f"Could not initialise model for a new job: {e}", exc_info=True)
+            raise HTTPException(400, f"Could not initialise model: {e}") from e
+
+        job = Job(id=job_id, store=store)
+        job.categories = dataset.categories
+        job.num_images_total = num_images_total
+        job.num_images_processed = num_images_processed
+        JOB_STORE[job.id] = job
+
+        logger.info(
+            f"Created job {job.id}: dataset_type='{request.dataset_type}' "
+            f"({request.dataset_path}), model_type='{request.model_type}' "
+            f"({request.model_path}), resume={request.resume}"
+        )
+
+        thread = threading.Thread(
+            target=run_job,
+            args=(
+                job,
+                dataset,
+                model,
+                splits,
+                request.batch_size,
+                request.iou_threshold,
+                request.resume,
+            ),
+            daemon=True,
+        )
+        thread.start()
+    except Exception:
+        JOB_STORE.pop(job_id, None)
+        release_active_job(request.dataset_path, job_id)
+        raise
+
+    return _job_to_response(job)
 
 
 # ---------------------------------------------------------------------------
@@ -317,12 +454,15 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
 
     store = JobStore(request.dataset_path)
     status = store.get_meta("status") or "done"
+    can_resume = _store_can_resume(store, status)
+    error = store.get_meta("error")
 
     # If a crash left the DB in a running/pending state, surface it as error.
     if status in ("running", "pending"):
         status = "error"
+        error = "Job was interrupted (backend restarted mid-run)"
         store.set_meta("status", status)
-        store.set_meta("error", "Job was interrupted (backend restarted mid-run)")
+        store.set_meta("error", error)
 
     raw_categories = store.get_meta("categories")
     categories: dict[int, str] = {}
@@ -331,7 +471,13 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         categories = {int(k): v for k, v in raw.items()}
 
     job_id = str(uuid.uuid4())
-    job = Job(id=job_id, store=store, status=status, categories=categories)  # type: ignore[arg-type]
+    job = Job(
+        id=job_id,
+        store=store,
+        status=status,  # type: ignore[arg-type]
+        categories=categories,
+        error=error if isinstance(error, str) else None,
+    )
     job.num_images_total = store.get_meta("num_images_total") or 0
     job.num_images_processed = store.get_meta("num_images_processed") or 0
     JOB_STORE[job_id] = job
@@ -340,19 +486,12 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         f"Loaded existing job {job_id} from '{request.dataset_path}' "
         f"({store.record_count()} records)"
     )
-    components = store.dimensionality_reduction_components()
-    has_reduction = store.has_dimensionality_reduction()
+    if status == "error":
+        job.error = error if isinstance(error, str) else "Job was interrupted"
 
-    return JobStatusResponse(
-        id=job_id,
-        status=status,
-        num_records=store.record_count(),
-        categories=categories,
-        num_images_total=job.num_images_total,
-        num_images_processed=job.num_images_processed,
-        has_dimensionality_reduction=has_reduction,
-        dimensionality_reduction_components=components,
-    )
+    response = _job_to_response(job)
+    response.can_resume = can_resume
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -363,19 +502,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
 @app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     job = _get_job_or_404(job_id)
-    components = job.store.dimensionality_reduction_components()
-    has_reduction = job.store.has_dimensionality_reduction()
-    return JobStatusResponse(
-        id=job.id,
-        status=job.status,
-        error=job.error,
-        num_records=job.store.record_count(),
-        categories=job.categories,
-        num_images_total=job.num_images_total,
-        num_images_processed=job.num_images_processed,
-        has_dimensionality_reduction=has_reduction,
-        dimensionality_reduction_components=components,
-    )
+    return _job_to_response(job)
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +622,116 @@ def get_job_records_by_image_paths(
     return job.store.get_records_by_image_paths(
         image_paths=payload.image_paths, split=payload.split
     )
+
+
+# ---------------------------------------------------------------------------
+# Evaluation metrics (on-demand + cached)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
+def get_job_evaluation(job_id: str) -> EvaluationMetricsResponse:
+    """Compute or return cached evaluation metrics for this job."""
+    try:
+        job = _get_job_or_404(job_id)
+        if job.status != "done":
+            raise HTTPException(409, f"Job is not finished yet (status='{job.status}')")
+
+        dataset_type = _get_dataset_type_for_job(job)
+        metric_defs = get_metrics_for_dataset(dataset_type)
+        if not metric_defs:
+            raise HTTPException(422, f"Dataset type '{dataset_type}' has no registered metrics.")
+
+        cached = job.store.get_cached_metrics(job.id, dataset_type)
+        if cached is not None:
+            metrics, calculated_at = cached
+            return EvaluationMetricsResponse(
+                dataset_type=dataset_type,
+                metrics=metrics,
+                metric_definitions=[
+                    MetricDefinitionResponse(
+                        name=m.name,
+                        display_name=m.display_name,
+                        description=m.description,
+                        metric_type=m.metric_type.value,
+                    )
+                    for m in metric_defs
+                ],
+                cached=True,
+                calculated_at=calculated_at,
+            )
+
+        calculator = _get_metrics_calculator_for_job(job, dataset_type)
+        matches = _load_matches_for_job(job)
+        metrics = calculator.calculate(matches)
+        job.store.cache_metrics(job.id, dataset_type, metrics)
+        cached_after_write = job.store.get_cached_metrics(job.id, dataset_type)
+        calculated_at = cached_after_write[1] if cached_after_write is not None else None
+        return EvaluationMetricsResponse(
+            dataset_type=dataset_type,
+            metrics=metrics,
+            metric_definitions=[
+                MetricDefinitionResponse(
+                    name=m.name,
+                    display_name=m.display_name,
+                    description=m.description,
+                    metric_type=m.metric_type.value,
+                )
+                for m in metric_defs
+            ],
+            cached=False,
+            calculated_at=calculated_at,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Evaluation endpoint failed", exc_info=True)
+        raise HTTPException(500, f"Evaluation failed: {exc}") from exc
+
+
+@app.get("/api/v1/jobs/{job_id}/optimal-threshold", response_model=OptimalThresholdResponse)
+def get_optimal_threshold(
+    job_id: str,
+    metric: str = Query(default="f1"),
+    num_thresholds: int = Query(default=100, ge=10, le=1000),
+) -> OptimalThresholdResponse:
+    """Find confidence threshold that maximizes one optimizable metric."""
+    try:
+        job = _get_job_or_404(job_id)
+        if job.status != "done":
+            raise HTTPException(409, f"Job is not finished yet (status='{job.status}')")
+
+        dataset_type = _get_dataset_type_for_job(job)
+        calculator = _get_metrics_calculator_for_job(job, dataset_type)
+        matches = _load_matches_for_job(job)
+        try:
+            threshold = calculator.get_optimal_threshold(
+                metric_name=metric,
+                matches=matches,
+                num_thresholds=num_thresholds,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+        filtered_matches = _apply_confidence_threshold(matches, threshold)
+        metric_value_raw = calculator.calculate(filtered_matches).get(metric, 0.0)
+        if isinstance(metric_value_raw, list) or isinstance(metric_value_raw, dict):
+            metric_value = 0.0
+        else:
+            metric_value = float(metric_value_raw)
+
+        return OptimalThresholdResponse(
+            dataset_type=dataset_type,
+            metric_name=metric,
+            threshold=float(threshold),
+            metric_value=metric_value,
+            num_thresholds=num_thresholds,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Optimal-threshold endpoint failed", exc_info=True)
+        raise HTTPException(500, f"Optimal threshold failed: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -628,11 +865,176 @@ def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResp
 # ---------------------------------------------------------------------------
 
 
+def _num_images_remaining(num_images_total: int, num_images_processed: int) -> int:
+    """Return the non-negative number of images left to process."""
+    return max(num_images_total - num_images_processed, 0)
+
+
+def _store_can_resume(store: JobStore, status: str | None) -> bool:
+    """Return True when *store* represents an interrupted resumable run."""
+    return bool(status in {"pending", "running", "error"} and store.has_progress_tracking())
+
+
+def _build_run_config(request: JobRequest, split_names: list[str]) -> dict[str, Any]:
+    """Return the normalized persisted run configuration for one request."""
+    return {
+        "dataset_type": request.dataset_type,
+        "model_path": request.model_path,
+        "model_type": request.model_type,
+        "splits": split_names,
+        "batch_size": int(request.batch_size),
+        "iou_threshold": float(request.iou_threshold),
+    }
+
+
+def _job_to_response(job: Job) -> JobStatusResponse:
+    """Convert an in-memory job to the frontend-facing status response."""
+    components = job.store.dimensionality_reduction_components()
+    has_reduction = job.store.has_dimensionality_reduction()
+    num_images_total = int(job.num_images_total or job.store.get_meta("num_images_total") or 0)
+    num_images_processed = int(
+        job.num_images_processed or job.store.get_meta("num_images_processed") or 0
+    )
+    error = job.error
+    if error is None and job.status == "error":
+        stored_error = job.store.get_meta("error")
+        error = str(stored_error) if stored_error is not None else None
+
+    return JobStatusResponse(
+        id=job.id,
+        status=job.status,
+        error=error,
+        num_records=job.store.record_count(),
+        categories=job.categories,
+        num_images_total=num_images_total,
+        num_images_processed=num_images_processed,
+        num_images_remaining=_num_images_remaining(num_images_total, num_images_processed),
+        can_resume=_store_can_resume(job.store, job.status),
+        has_dimensionality_reduction=has_reduction,
+        dimensionality_reduction_components=components,
+    )
+
+
 def _get_job_or_404(job_id: str) -> Job:
     job = JOB_STORE.get(job_id)
     if job is None:
         raise HTTPException(404, f"Job not found: {job_id}")
     return job
+
+
+def _get_dataset_type_for_job(job: Job) -> str:
+    dataset_type = job.store.get_meta("dataset_type")
+    if isinstance(dataset_type, str) and dataset_type in DATASET_REGISTRY:
+        return dataset_type
+
+    # Backward-compatible fallback for DBs created before dataset_type metadata existed.
+    if len(DATASET_REGISTRY) == 1:
+        return next(iter(DATASET_REGISTRY))
+    if "coco_detection" in DATASET_REGISTRY:
+        return "coco_detection"
+    raise HTTPException(
+        422,
+        "Could not determine dataset_type for this job. Re-run inference with the latest backend.",
+    )
+
+
+def _get_metrics_calculator_for_job(job: Job, dataset_type: str):
+    # Build the calculator from already-loaded job metadata so this endpoint
+    # works with existing DBs without forcing dataset re-instantiation.
+    if dataset_type == "coco_detection":
+        if not job.categories:
+            raw_categories = job.store.get_meta("categories")
+            categories: dict[int, str] = {}
+            if raw_categories:
+                raw = json.loads(raw_categories) if isinstance(raw_categories, str) else raw_categories
+                categories = {int(k): v for k, v in raw.items()}
+            if not categories:
+                raise HTTPException(
+                    422,
+                    "No category metadata available for evaluation. "
+                    "Load/create the job again to refresh metadata.",
+                )
+            job.categories = categories
+
+        from visualizer.backend.metrics.coco_detection_metrics import (  # local import to keep startup light
+            COCODetectionMetricsCalculator,
+        )
+
+        return COCODetectionMetricsCalculator(job.categories)
+
+    dataset_cls = DATASET_REGISTRY.get(dataset_type)
+    if dataset_cls is None:
+        raise HTTPException(422, f"Unknown dataset_type '{dataset_type}'.")
+    dataset_path = job.store.get_meta("dataset_path")
+    if not dataset_path:
+        raise HTTPException(422, "Missing dataset_path metadata in job DB.")
+    try:
+        dataset = dataset_cls(dataset_path)
+    except Exception as exc:
+        raise HTTPException(
+            422,
+            f"Could not initialize dataset '{dataset_type}' from stored path: {exc}",
+        ) from exc
+    if not hasattr(dataset, "get_metrics_calculator"):
+        raise HTTPException(422, f"Dataset type '{dataset_type}' does not implement metrics.")
+    return dataset.get_metrics_calculator()
+
+
+def _row_to_match(row: dict[str, Any]) -> Match:
+    pred_bbox = None
+    if row["pred_x1"] is not None:
+        pred_bbox = (
+            float(row["pred_x1"]),
+            float(row["pred_y1"]),
+            float(row["pred_x2"]),
+            float(row["pred_y2"]),
+        )
+    prediction = (
+        Prediction(
+            class_id=int(row["pred_class_id"]),
+            confidence=float(row["pred_confidence"] or 0.0),
+            bbox=pred_bbox,
+        )
+        if row["pred_class_id"] is not None
+        else None
+    )
+
+    gt_bbox = None
+    if row["gt_x1"] is not None:
+        gt_bbox = (
+            float(row["gt_x1"]),
+            float(row["gt_y1"]),
+            float(row["gt_x2"]),
+            float(row["gt_y2"]),
+        )
+    ground_truth = (
+        Prediction(
+            class_id=int(row["gt_class_id"]),
+            confidence=float(row["gt_confidence"] or 1.0),
+            bbox=gt_bbox,
+        )
+        if row["gt_class_id"] is not None
+        else None
+    )
+    return Match(
+        prediction=prediction,
+        embedding=None,
+        ground_truth=ground_truth,
+        status=str(row["status"]),
+    )
+
+
+def _load_matches_for_job(job: Job) -> list[Match]:
+    rows = job.store.get_evaluation_rows()
+    return [_row_to_match(row) for row in rows]
+
+
+def _apply_confidence_threshold(matches: list[Match], threshold: float) -> list[Match]:
+    return [
+        match
+        for match in matches
+        if match.prediction is None or match.prediction.confidence >= threshold
+    ]
 
 
 def _get_search_job_or_404(search_id: str) -> SearchJob:

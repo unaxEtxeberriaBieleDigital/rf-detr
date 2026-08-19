@@ -3,8 +3,10 @@ import type {
   CreateJobRequest,
   DimensionalityReductionStatusResponse,
   EmbeddingRecordDTO,
+  EvaluationMetricsResponse,
   ImagePathPageResponse,
   JobStatusResponse,
+  OptimalThresholdResponse,
   SemanticSearchStatusResponse,
 } from "../types";
 
@@ -163,4 +165,22 @@ export function listSemanticSearches(jobId: string): Promise<SemanticSearchStatu
 
 export function getSemanticSearch(jobId: string, searchId: string): Promise<SemanticSearchStatusResponse> {
   return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
+}
+
+export function getJobEvaluation(jobId: string): Promise<EvaluationMetricsResponse> {
+  return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation`);
+}
+
+export function getJobOptimalThreshold(
+  jobId: string,
+  metricName: string,
+  numThresholds = 100,
+): Promise<OptimalThresholdResponse> {
+  const search = new URLSearchParams({
+    metric: metricName,
+    num_thresholds: String(numThresholds),
+  });
+  return request<OptimalThresholdResponse>(
+    `/api/v1/jobs/${jobId}/optimal-threshold?${search.toString()}`,
+  );
 }

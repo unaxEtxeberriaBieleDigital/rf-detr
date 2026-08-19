@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
 
+from visualizer.backend.metrics.base_metrics import MetricsCalculator
 from visualizer.backend.prediction import Prediction
 
 SUPPORTED_ANNOTATIONS = """
@@ -124,3 +125,14 @@ class BaseDataset(ABC):
         if categories is None:
             raise Exception("The dataset does not have supported annotations")
         return categories
+
+    @abstractmethod
+    def get_metrics_calculator(self) -> MetricsCalculator:
+        """Return dataset-specific metrics calculator.
+
+        Dataset implementations that support evaluation metrics should override
+        this method and return a concrete :class:`MetricsCalculator`.
+        """
+        raise NotImplementedError(
+            f"Dataset type '{self.type.name}' does not provide a metrics calculator."
+        )

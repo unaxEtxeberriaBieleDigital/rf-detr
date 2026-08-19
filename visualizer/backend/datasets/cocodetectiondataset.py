@@ -12,6 +12,8 @@ from pathlib import Path
 from visualizer.backend.datasets.basedataset import *
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import register_dataset
+from visualizer.backend.metrics import MetricsCalculator
+from visualizer.backend.metrics.coco_detection_metrics import COCODetectionMetricsCalculator
 
 
 @register_dataset("coco_detection")
@@ -116,4 +118,12 @@ class COCODetectionDataset(BaseDataset):
         if len(parts) >= 2:
             keys.add(cls._normalize_lookup_key(Path(*parts[1:]).as_posix()))
         return keys
+
+    def get_metrics_calculator(self) -> MetricsCalculator:
+        """Get the metrics calculator for this COCO detection dataset.
+        
+        Returns:
+            COCODetectionMetricsCalculator instance configured with this dataset's categories.
+        """
+        return COCODetectionMetricsCalculator(self.categories)
  
