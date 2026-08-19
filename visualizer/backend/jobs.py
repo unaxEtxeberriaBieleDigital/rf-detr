@@ -6,6 +6,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import threading
 from typing import Literal
 
 from rfdetr.utilities.logger import get_logger
@@ -35,6 +36,46 @@ class Job:
 
 # Maps job_id -> Job.  The actual records live in the Job's SQLite DB, not in RAM.
 JOB_STORE: dict[str, Job] = {}
+_ACTIVE_JOB_IDS_BY_PATH: dict[str, str] = {}
+_ACTIVE_JOB_IDS_LOCK = threading.Lock()
+
+
+def job_path_key(dataset_path: str | Path) -> str:
+    """Return a normalized key used for one dataset/job DB path."""
+    return str(Path(dataset_path).resolve())
+
+
+def try_register_active_job(dataset_path: str | Path, job_id: str) -> str | None:
+    """Reserve *dataset_path* for one active inference job.
+
+    Args:
+        dataset_path: Dataset root directory.
+        job_id: In-memory job identifier attempting to run.
+
+    Returns:
+        Existing active job id when the dataset is already reserved, otherwise ``None``.
+    """
+    key = job_path_key(dataset_path)
+    with _ACTIVE_JOB_IDS_LOCK:
+        existing_job_id = _ACTIVE_JOB_IDS_BY_PATH.get(key)
+        if existing_job_id is not None:
+            return existing_job_id
+        _ACTIVE_JOB_IDS_BY_PATH[key] = job_id
+    return None
+
+
+def release_active_job(dataset_path: str | Path, job_id: str) -> None:
+    """Release a dataset-path reservation held by *job_id*."""
+    key = job_path_key(dataset_path)
+    with _ACTIVE_JOB_IDS_LOCK:
+        if _ACTIVE_JOB_IDS_BY_PATH.get(key) == job_id:
+            del _ACTIVE_JOB_IDS_BY_PATH[key]
+
+
+def get_active_job_id(dataset_path: str | Path) -> str | None:
+    """Return the active in-memory job id for *dataset_path*, if any."""
+    with _ACTIVE_JOB_IDS_LOCK:
+        return _ACTIVE_JOB_IDS_BY_PATH.get(job_path_key(dataset_path))
 
 
 def run_job(
@@ -44,6 +85,7 @@ def run_job(
     splits: list[Split],
     batch_size: int,
     iou_threshold: float,
+    resume: bool = False,
 ) -> None:
     """Run inference over *splits*, match predictions to ground truth, and persist to SQLite.
 
@@ -63,30 +105,52 @@ def run_job(
         splits: Dataset splits to process.
         batch_size: Number of images per inference batch.
         iou_threshold: Minimum IoU for a prediction to be matched to a ground truth box.
+        resume: Whether to resume an interrupted run from persisted per-image progress.
     """
     job.status = "running"
+    job.error = None
     job.store.set_meta("status", "running")
+    job.store.set_meta("error", None)
     logger.info(
         f"[job {job.id}] starting: splits={[s.name for s in splits]}, "
-        f"batch_size={batch_size}, iou_threshold={iou_threshold}"
+        f"batch_size={batch_size}, iou_threshold={iou_threshold}, resume={resume}"
     )
     try:
-        job.num_images_total = sum(len(list(dataset.iter_split(split))) for split in splits)
-        job.store.set_meta("num_images_total", job.num_images_total)
-        logger.info(
-            f"[job {job.id}] found {job.num_images_total} image(s) across {len(splits)} split(s)"
+        split_names = [split.name for split in splits]
+        processed_image_paths = (
+            job.store.get_processed_image_paths(split_names=split_names) if resume else set()
         )
 
-        total_records = 0
+        job.num_images_total = 0
+        job.num_images_processed = 0
+        for split in splits:
+            for image_path in dataset.iter_split(split):
+                job.num_images_total += 1
+                if str(image_path) in processed_image_paths:
+                    job.num_images_processed += 1
+
+        job.store.set_meta("num_images_total", job.num_images_total)
+        job.store.set_meta("num_images_processed", job.num_images_processed)
+        logger.info(
+            f"[job {job.id}] found {job.num_images_total} image(s) across {len(splits)} split(s); "
+            f"{job.num_images_processed} already processed"
+        )
+
+        total_records = job.store.record_count()
 
         for split in splits:
             logger.info(f"[job {job.id}] processing split '{split.name}'")
             for batch in dataset.iter_batches(split, batch_size):
-                embeddings, predictions = model.get_batch_embeddings(batch)
+                pending_batch = [image_path for image_path in batch if str(image_path) not in processed_image_paths]
+                if not pending_batch:
+                    continue
+
+                embeddings, predictions = model.get_batch_embeddings(pending_batch)
 
                 batch_records: list[EmbeddingRecord] = []
+                processed_batch_images: list[tuple[str, str]] = []
                 for image_path, image_embeddings, image_predictions in zip(
-                    batch, embeddings, predictions
+                    pending_batch, embeddings, predictions
                 ):
                     ground_truths = dataset.get_ground_truth(image_path)
                     matches = match_detections(
@@ -105,11 +169,17 @@ def run_job(
                         )
                         batch_records.append(record)
 
-                # Write batch to DB immediately – no accumulation in RAM.
-                job.store.insert_records(batch_records)
+                    processed_batch_images.append((str(image_path), split.name))
+
+                # Write batch atomically – records, per-image progress, and counters together.
+                job.num_images_processed += len(processed_batch_images)
+                job.store.persist_batch(
+                    batch_records,
+                    processed_batch_images,
+                    num_images_processed=job.num_images_processed,
+                )
+                processed_image_paths.update(image_path for image_path, _ in processed_batch_images)
                 total_records += len(batch_records)
-                job.num_images_processed += len(batch)
-                job.store.set_meta("num_images_processed", job.num_images_processed)
                 logger.info(
                     f"[job {job.id}] {job.num_images_processed}/{job.num_images_total} "
                     f"image(s) processed ({total_records} record(s) so far)"
@@ -128,3 +198,5 @@ def run_job(
         job.status = "error"
         job.store.set_meta("status", "error")
         job.store.set_meta("error", str(e))
+    finally:
+        release_active_job(job.store.dataset_path, job.id)

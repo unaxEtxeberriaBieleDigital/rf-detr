@@ -35,6 +35,7 @@ from visualizer.backend.embeddingrecord import EmbeddingRecord
 logger = get_logger()
 
 DB_FILENAME = "rfdetr_visualizer.db"
+PROGRESS_SCHEMA_VERSION = 1
 
 # How many records are loaded from DB at once during IncrementalPCA fitting.
 _PCA_BATCH_SIZE = 10_000
@@ -106,6 +107,21 @@ class JobStore:
                     pca_components  INTEGER
                 );
 
+                CREATE TABLE IF NOT EXISTS processed_images (
+                    image_path    TEXT PRIMARY KEY,
+                    split         TEXT NOT NULL,
+                    processed_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS evaluation_cache (
+                    job_id         TEXT NOT NULL,
+                    dataset_type   TEXT NOT NULL,
+                    metric_name    TEXT NOT NULL,
+                    metric_value   TEXT NOT NULL,
+                    calculated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (job_id, dataset_type, metric_name)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_records_image_path
                     ON records (image_path);
                 CREATE INDEX IF NOT EXISTS idx_records_split
@@ -114,6 +130,10 @@ class JobStore:
                     ON records (status);
                 CREATE INDEX IF NOT EXISTS idx_records_split_status
                     ON records (split, status);
+                CREATE INDEX IF NOT EXISTS idx_processed_images_split
+                    ON processed_images (split);
+                CREATE INDEX IF NOT EXISTS idx_evaluation_cache_lookup
+                    ON evaluation_cache (job_id, dataset_type);
                 """
             )
 
@@ -149,6 +169,127 @@ class JobStore:
                 "SELECT value FROM job_meta WHERE key = ?", (key,)
             ).fetchone()
         return json.loads(row["value"]) if row else default
+
+    def set_run_config(self, config: dict[str, Any]) -> None:
+        """Persist the normalized run configuration used for resume validation.
+
+        Args:
+            config: JSON-serializable run configuration.
+        """
+        self.set_meta("run_config", config)
+
+    def get_run_config(self) -> dict[str, Any] | None:
+        """Return the persisted run configuration, if available."""
+        config = self.get_meta("run_config")
+        return config if isinstance(config, dict) else None
+
+    def enable_progress_tracking(self) -> None:
+        """Mark this DB as supporting resumable per-image progress."""
+        self.set_meta("progress_schema_version", PROGRESS_SCHEMA_VERSION)
+
+    def has_progress_tracking(self) -> bool:
+        """Return True when this DB supports resumable per-image progress."""
+        return (
+            self.get_meta("progress_schema_version") == PROGRESS_SCHEMA_VERSION
+            and self.get_run_config() is not None
+            and self._table_exists("processed_images")
+        )
+
+    def cache_metrics(
+        self,
+        job_id: str,
+        dataset_type: str,
+        metrics: dict[str, Any],
+    ) -> None:
+        """Cache computed evaluation metrics for a job/dataset pair.
+
+        Args:
+            job_id: In-memory job identifier used by API.
+            dataset_type: Dataset registry key (e.g., ``coco_detection``).
+            metrics: Mapping metric_name -> JSON-serializable metric value.
+        """
+        rows = [
+            (job_id, dataset_type, metric_name, json.dumps(metric_value))
+            for metric_name, metric_value in metrics.items()
+        ]
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "DELETE FROM evaluation_cache WHERE job_id = ? AND dataset_type = ?",
+                (job_id, dataset_type),
+            )
+            if rows:
+                conn.executemany(
+                    """
+                    INSERT INTO evaluation_cache (job_id, dataset_type, metric_name, metric_value)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+
+    def get_cached_metrics(
+        self,
+        job_id: str,
+        dataset_type: str,
+    ) -> tuple[dict[str, Any], str | None] | None:
+        """Get cached metrics for a job/dataset pair.
+
+        Args:
+            job_id: In-memory job identifier used by API.
+            dataset_type: Dataset registry key (e.g., ``coco_detection``).
+
+        Returns:
+            Tuple of ``(metrics, calculated_at)`` when cache exists; otherwise ``None``.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT metric_name, metric_value, calculated_at
+                FROM evaluation_cache
+                WHERE job_id = ? AND dataset_type = ?
+                ORDER BY metric_name
+                """,
+                (job_id, dataset_type),
+            ).fetchall()
+
+        if not rows:
+            return None
+
+        metrics: dict[str, Any] = {}
+        calculated_at = rows[0]["calculated_at"]
+        for row in rows:
+            metrics[row["metric_name"]] = json.loads(row["metric_value"])
+        return metrics, calculated_at
+
+    def invalidate_metrics_cache(
+        self,
+        job_id: str,
+        dataset_type: str | None = None,
+    ) -> None:
+        """Delete cached evaluation metrics.
+
+        Args:
+            job_id: In-memory job identifier used by API.
+            dataset_type: Optional dataset type; when omitted removes all cache rows for the job.
+        """
+        with self._write_lock, self._connect() as conn:
+            if dataset_type is None:
+                conn.execute("DELETE FROM evaluation_cache WHERE job_id = ?", (job_id,))
+            else:
+                conn.execute(
+                    "DELETE FROM evaluation_cache WHERE job_id = ? AND dataset_type = ?",
+                    (job_id, dataset_type),
+                )
+
+    def reset_for_rerun(self) -> None:
+        """Clear previous inference artifacts to safely rerun on same dataset/model.
+
+        This removes record rows, dimensionality-reduction outputs, and evaluation cache,
+        while keeping stable metadata keys such as dataset path/type and categories.
+        """
+        with self._write_lock, self._connect() as conn:
+            conn.execute("DELETE FROM records")
+            conn.execute("DELETE FROM processed_images")
+            conn.execute("DELETE FROM evaluation_cache")
 
     # ------------------------------------------------------------------
     # Write
@@ -201,6 +342,78 @@ class JobStore:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 rows,
+            )
+
+    def persist_batch(
+        self,
+        records: list[EmbeddingRecord],
+        processed_images: list[tuple[str, str]],
+        num_images_processed: int,
+    ) -> None:
+        """Atomically persist one processed image batch.
+
+        Record rows, per-image progress rows, and the persisted processed-image counter
+        are committed in one SQLite transaction so resume never sees a half-written batch.
+
+        Args:
+            records: Batch record rows to insert.
+            processed_images: ``(image_path, split)`` tuples for processed images.
+            num_images_processed: Persisted cumulative processed-image count after this batch.
+        """
+        record_rows = []
+        for record in records:
+            prediction = record.prediction
+            ground_truth = record.ground_truth
+            record_rows.append(
+                (
+                    record.id,
+                    record.image_path,
+                    record.split,
+                    record.status,
+                    prediction.class_id if prediction else None,
+                    prediction.confidence if prediction else None,
+                    prediction.bbox[0] if prediction and prediction.bbox else None,
+                    prediction.bbox[1] if prediction and prediction.bbox else None,
+                    prediction.bbox[2] if prediction and prediction.bbox else None,
+                    prediction.bbox[3] if prediction and prediction.bbox else None,
+                    ground_truth.class_id if ground_truth else None,
+                    ground_truth.confidence if ground_truth else None,
+                    ground_truth.bbox[0] if ground_truth and ground_truth.bbox else None,
+                    ground_truth.bbox[1] if ground_truth and ground_truth.bbox else None,
+                    ground_truth.bbox[2] if ground_truth and ground_truth.bbox else None,
+                    ground_truth.bbox[3] if ground_truth and ground_truth.bbox else None,
+                    json.dumps(record.embedding) if record.embedding else None,
+                )
+            )
+
+        with self._write_lock, self._connect() as conn:
+            if record_rows:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO records
+                    (id, image_path, split, status,
+                     pred_class_id, pred_confidence,
+                     pred_x1, pred_y1, pred_x2, pred_y2,
+                     gt_class_id, gt_confidence,
+                     gt_x1, gt_y1, gt_x2, gt_y2,
+                     raw_embedding)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    record_rows,
+                )
+
+            if processed_images:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO processed_images (image_path, split)
+                    VALUES (?, ?)
+                    """,
+                    processed_images,
+                )
+
+            conn.execute(
+                "INSERT OR REPLACE INTO job_meta (key, value) VALUES (?, ?)",
+                ("num_images_processed", json.dumps(num_images_processed)),
             )
 
     # ------------------------------------------------------------------
@@ -553,6 +766,51 @@ class JobStore:
             ).fetchone()
         return row[0] if row else None
 
+    def processed_image_count(self, split_names: list[str] | None = None) -> int:
+        """Return how many images have been marked processed.
+
+        Args:
+            split_names: Optional split-name filter.
+
+        Returns:
+            Number of processed images tracked in the DB.
+        """
+        if not self._table_exists("processed_images"):
+            return 0
+
+        sql = "SELECT COUNT(*) FROM processed_images"
+        params: list[Any] = []
+        if split_names:
+            placeholders = ",".join("?" * len(split_names))
+            sql += f" WHERE split IN ({placeholders})"  # noqa: S608
+            params.extend(split_names)
+
+        with self._connect() as conn:
+            return int(conn.execute(sql, params).fetchone()[0])
+
+    def get_processed_image_paths(self, split_names: list[str] | None = None) -> set[str]:
+        """Return the set of already-processed image paths.
+
+        Args:
+            split_names: Optional split-name filter.
+
+        Returns:
+            Set of persisted image-path strings.
+        """
+        if not self._table_exists("processed_images"):
+            return set()
+
+        sql = "SELECT image_path FROM processed_images"
+        params: list[Any] = []
+        if split_names:
+            placeholders = ",".join("?" * len(split_names))
+            sql += f" WHERE split IN ({placeholders})"  # noqa: S608
+            params.extend(split_names)
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return {str(row["image_path"]) for row in rows}
+
     def get_records(
         self,
         split: str | None = None,
@@ -634,6 +892,28 @@ class JobStore:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_dto(r) for r in rows]
 
+    def get_evaluation_rows(self) -> list[dict[str, Any]]:
+        """Return compact rows required to compute evaluation metrics.
+
+        Returns:
+            List of dictionaries with status, predicted class/confidence and ground-truth class.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    status,
+                    pred_class_id,
+                    pred_confidence,
+                    pred_x1, pred_y1, pred_x2, pred_y2,
+                    gt_class_id,
+                    gt_confidence,
+                    gt_x1, gt_y1, gt_x2, gt_y2
+                FROM records
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_image_path_for_record(self, record_id: str) -> str | None:
         """Return the ``image_path`` for a given record id (primary-key lookup).
 
@@ -682,6 +962,15 @@ class JobStore:
             Boolean indicating whether the DB file exists.
         """
         return (Path(dataset_path) / DB_FILENAME).exists()
+
+    def _table_exists(self, table_name: str) -> bool:
+        """Return True when *table_name* exists in this SQLite DB."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+        return row is not None
 
 
 # ---------------------------------------------------------------------------

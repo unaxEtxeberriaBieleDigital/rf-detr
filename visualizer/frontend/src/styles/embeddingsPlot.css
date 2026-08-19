@@ -11,10 +11,6 @@
 }
 
 .pca-panel {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 10;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -24,6 +20,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   flex-wrap: nowrap;
+  pointer-events: auto;
 }
 
 .pca-panel-label {

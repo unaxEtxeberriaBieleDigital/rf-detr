@@ -185,50 +185,6 @@ export default function EmbeddingPlot({
     });
   }, [withEmbedding, dimensions, categories, selectedRecordId, clusterSelection]);
 
-  if (withEmbedding.length === 0) {
-    const centralContent = (
-      <div 
-        style={{
-            backgroundColor: "#000000",
-            border: "var(--border-subtle) 2px solid",
-            borderRadius: "var(--radius-lg)"
-        }}
-      >
-        <p>
-          Usa el panel <strong>Calcular</strong> para visualizar los embeddings en el scatter plot.
-        </p>
-      </div>
-    );
-
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          width: "100%",
-          color: "#ff0000",
-          fontSize: "0.9rem",
-          textAlign: "center",
-        }}
-      >
-        <Beams
-          beamWidth={3}
-          beamHeight={30}
-          beamNumber={20}
-          lightColor="#ffffff"
-          speed={2}
-          noiseIntensity={1.75}
-          scale={0.2}
-          rotation={30}
-          centralContent={centralContent}
-        />
-      </div>
-    );
-  }
-
-
   const pcaPanel = (
     <div className="pca-panel">
       <select
@@ -275,6 +231,60 @@ export default function EmbeddingPlot({
       )}
     </div>
   );
+
+
+  if (withEmbedding.length === 0) {
+    const centralContent = (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+        }}
+      >
+        {pcaPanel}
+        <div 
+          style={{
+              backgroundColor: "#000000",
+              border: "var(--border-subtle) 2px solid",
+              borderRadius: "var(--radius-lg)"
+          }}
+        >
+          <p>
+            Usa el panel <strong>Calcular</strong> para visualizar los embeddings en el scatter plot.
+          </p>
+        </div>
+      </div>
+    );
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          width: "100%",
+          color: "#ff0000",
+          fontSize: "0.9rem",
+          textAlign: "center",
+        }}
+      >
+        <Beams
+          beamWidth={3}
+          beamHeight={30}
+          beamNumber={20}
+          lightColor="#ffffff"
+          speed={2}
+          noiseIntensity={1.75}
+          scale={0.2}
+          rotation={30}
+          centralContent={centralContent}
+        />
+      </div>
+    );
+  }
+
 
   return (
     <div className="embedding-plot-wrapper">
