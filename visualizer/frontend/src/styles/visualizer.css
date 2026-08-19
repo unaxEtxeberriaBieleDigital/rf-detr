@@ -11,19 +11,20 @@
 /* ── Collapsible sidebar ── */
 .visualizer-sidebar {
   position: relative;
-  width: 50px;
+  width: 0px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-app);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 0px solid transparent;
   overflow: hidden;
-  transition: width 0.25s ease;
+  transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1), border-right-color 0.35s;
   z-index: 10;
 }
 
 .visualizer-sidebar--open {
   width: 300px;
+  border-right: 1px solid var(--border-subtle);
 }
 
 /* Toggle button — hamburger en el header, siempre visible */
@@ -159,4 +160,69 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-surface);
+}
+
+.fsb-top-bar {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.fsb-logo {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+}
+
+.visualizer-sidebar-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+
+.visualizer-sidebar-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-open-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-elevated, #ffffff);
+  border: 1px solid var(--border-subtle, #d1d5db);
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-primary);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.btn-open-filters:hover {
+  background: var(--bg-hover, #f3f4f6);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-color, #2563eb);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  margin-left: 4px;
 }

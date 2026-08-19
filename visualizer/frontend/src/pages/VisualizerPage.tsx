@@ -17,6 +17,8 @@ import MultiPanelLayout, { type PanelDefinition } from "../components/MultiPanel
 import { useAppConfig } from "../context/AppContext";
 import type { ClassThresholds, EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
 import LoadingDiv from "../components/LoadingDiv";
+import { PanelLeftOpen, Funnel } from "lucide-react";
+import bieleLogo from "../assets/logos/biele-logo.png"
 
 export default function VisualizerPage() {
   const { config, setConfig, reset } = useAppConfig();
@@ -301,6 +303,13 @@ export default function VisualizerPage() {
 
   if (!config) return null;
 
+  const activeFilterCount =
+    filters.qualities.size +
+    filters.visibleClasses.size +
+    filters.visibleSplits.size +
+    (filters.minConfidence > 0 ? 1 : 0) +
+    filters.perClassConfidence.size;
+
   return (
     <div className="visualizer-container">
       {/* ── Collapsible sidebar ── */}
@@ -324,6 +333,20 @@ export default function VisualizerPage() {
       <div className={`visualizer-main-wrapper${sidebarOpen ? " visualizer-main-wrapper--shifted" : ""}`}>
         <header className="visualizer-header">
           <div className="visualizer-header-left">
+            <img src={bieleLogo} alt="Biele Logo" className="fsb-logo" />
+            {!sidebarOpen && (
+              <button
+                className="btn-open-filters"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Funnel size={18} />
+                Filtros
+                {activeFilterCount > 0 && (
+                  <span className="filter-badge">{activeFilterCount}</span>
+                )}
+              </button>
+            )}
+
             <div>
               <h1>RF-DETR Visualizer</h1>
               <p className="visualizer-subtitle">
@@ -331,6 +354,7 @@ export default function VisualizerPage() {
               </p>
             </div>
           </div>
+
           <div className="visualizer-header-right">
             <button className="secondary" onClick={reset}>
               Nueva investigación
@@ -371,20 +395,20 @@ export default function VisualizerPage() {
         records={
           openResult
             ? [
-                {
-                  id: "search-result",
-                  image_path: openResult.result.image_path,
-                  split: "",
-                  embedding: null,
-                  prediction: {
-                    class_id: openResult.result.class_id,
-                    confidence: openResult.result.confidence,
-                    bbox: openResult.result.bbox,
-                  },
-                  ground_truth: null,
-                  status: "tp",
+              {
+                id: "search-result",
+                image_path: openResult.result.image_path,
+                split: "",
+                embedding: null,
+                prediction: {
+                  class_id: openResult.result.class_id,
+                  confidence: openResult.result.confidence,
+                  bbox: openResult.result.bbox,
                 },
-              ]
+                ground_truth: null,
+                status: "tp",
+              },
+            ]
             : []
         }
         minConfidence={0}

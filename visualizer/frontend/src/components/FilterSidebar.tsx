@@ -1,10 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
-import { Scale, Funnel, Check, Tag, ChartPie } from 'lucide-react';
+import { PanelLeftClose, Scale, Funnel, Check, Tag, ChartPie } from 'lucide-react';
 import SegmentedControl from "./SegmentedControl";
-import bieleLogo from "../assets/logos/biele-logo.png"
-import bLogo from "../assets/logos/b-logo-white.png"
-
 
 // -----------------------------------------------------------------------
 // Types
@@ -259,188 +256,155 @@ export default function FilterSidebar({
 
   return (
     <aside className="fsb-sidebar">
-      <button
-        type="button"
-        className={`visualizer-sidebar-toggle ${
-          sidebarOpen? "visualizer-sidebar-toggle--open" : "visualizer-sidebar-toggle--closed"
-        }`}
-        onClick={() => setSidebarOpen((v) => !v)}
-        title={sidebarOpen ? "Cerrar filtros" : "Abrir filtros"}
-      >
-        ☰
-      </button>
-      {sidebarOpen? 
-        (<img src={bieleLogo} alt="Biele Logo" />):(<img src={bLogo} alt="Biele Logo" style={{width:"50px"}}/>)
-      }
+      {/* Cabecera del sidebar: Logo y botón de cerrar */}
+      <div className="fsb-top-bar">
+        <button
+          type="button"
+          className="visualizer-sidebar-close"
+          onClick={() => setSidebarOpen(false)}
+          title="Cerrar filtros"
+        >
+          <PanelLeftClose size={20} />
+        </button>
+      </div>
 
-      {
-        sidebarOpen? (
-          <div className="fsb-header">
-            <span className="fsb-title">Filtros <Funnel /></span>
-            {activeFilterCount > 0 && (
-              <button type="button" className="fsb-reset" onClick={resetAll}>
-                Resetear ({activeFilterCount}) 
-              </button>
-            )}
-          </div>
-        ) : (
-          <Funnel width={50} />
-        )
-      }
+      <div className="fsb-header">
+        <span className="fsb-title">Filtros <Funnel size={18} /></span>
+        {activeFilterCount > 0 && (
+          <button type="button" className="fsb-reset" onClick={resetAll}>
+            Borrar filtros ({activeFilterCount}) 
+          </button>
+        )}
+      </div>
 
       {/* ── Prediction quality ── */}
-      {
-        sidebarOpen? (
-          <Section title="Calidad de predicción">
-            <div className="fsb-quality-pills">
-              {ALL_QUALITIES.map((q) => {
-                const active = filters.qualities.size === 0 || filters.qualities.has(q);
-                return (
-                  <button
-                    key={q}
-                    type="button"
-                    className={`fsb-pill ${active ? "fsb-pill-active" : "fsb-pill-inactive"}`}
-                    style={active ? { background: QUALITY_COLORS[q], borderColor: QUALITY_COLORS[q] } : {}}
-                    onClick={() => toggleQuality(q)}
-                    title={`${QUALITY_LABELS[q]}: ${qualityCounts[q]} registros`}
-                  >
-                    {QUALITY_LABELS[q]}
-                    <span className="fsb-pill-count">{qualityCounts[q]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        ) : (
-          <Check width={50} />
-        )
-      }
+      <Section title="Calidad de predicción">
+        <div className="fsb-quality-pills">
+          {ALL_QUALITIES.map((q) => {
+            const active = filters.qualities.size === 0 || filters.qualities.has(q);
+            return (
+              <button
+                key={q}
+                type="button"
+                className={`fsb-pill ${active ? "fsb-pill-active" : "fsb-pill-inactive"}`}
+                style={active ? { background: QUALITY_COLORS[q], borderColor: QUALITY_COLORS[q] } : {}}
+                onClick={() => toggleQuality(q)}
+                title={`${QUALITY_LABELS[q]}: ${qualityCounts[q]} registros`}
+              >
+                {QUALITY_LABELS[q]}
+                <span className="fsb-pill-count">{qualityCounts[q]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
 
       {/* ── Confidence ── */}
-      {
-        sidebarOpen? (
-          <Section title="Confianza">
-            <div className="conf-type-selector">
-              <SegmentedControl
-                options={[
-                  { value: "global", label: "Global" },
-                  { value: "perclass", label: "Por clase" },
-                ]}
-                value={confMode}
-                onChange={setConfMode}
-              />
-            </div>
+      <Section title="Confianza">
+        <div className="conf-type-selector">
+          <SegmentedControl
+            options={[
+              { value: "global", label: "Global" },
+              { value: "perclass", label: "Por clase" },
+            ]}
+            value={confMode}
+            onChange={setConfMode}
+          />
+        </div>
 
-            {confMode === "global" && (
-              <div className="fsb-conf-row">
-                <label className="fsb-conf-label" htmlFor="fsb-global-conf">
-                  Global: {filters.minConfidence.toFixed(2)}
-                </label>
-                <input
-                  id="fsb-global-conf"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={filters.minConfidence}
-                  onChange={(e) => setGlobalConfidence(Number(e.currentTarget.value))}
-                  className="fsb-slider"
-                />
-              </div>
-            )}
+        {confMode === "global" && (
+          <div className="fsb-conf-row">
+            <label className="fsb-conf-label" htmlFor="fsb-global-conf">
+              Global: {filters.minConfidence.toFixed(2)}
+            </label>
+            <input
+              id="fsb-global-conf"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={filters.minConfidence}
+              onChange={(e) => setGlobalConfidence(Number(e.currentTarget.value))}
+              className="fsb-slider"
+            />
+          </div>
+        )}
 
-            {confMode === "perclass" && availableClasses.length > 0 && (
-              <div className="fsb-per-class-conf">
-                {availableClasses.map((id) => {
-                  const override = filters.perClassConfidence.get(id);
-                  const value = override !== undefined ? override : filters.minConfidence;
-                  const hasOverride = override !== undefined;
-                  return (
-                    <div key={id} className="fsb-conf-row fsb-conf-row-class">
-                      <span
-                        className={`fsb-conf-label fsb-class-label ${hasOverride ? "fsb-conf-override" : ""}`}
-                        title={categories[id] ?? `Clase ${id}`}
-                      >
-                        {categories[id] ?? `Clase ${id}`}
-                        {hasOverride && <span className="fsb-override-dot" />}
-                      </span>
-                      <span className="fsb-conf-value">{value.toFixed(2)}</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={value}
-                        onChange={(e) => setPerClassConfidence(id, Number(e.currentTarget.value))}
-                        className="fsb-slider"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        {confMode === "perclass" && availableClasses.length > 0 && (
+          <div className="fsb-per-class-conf">
+            {availableClasses.map((id) => {
+              const override = filters.perClassConfidence.get(id);
+              const value = override !== undefined ? override : filters.minConfidence;
+              const hasOverride = override !== undefined;
+              return (
+                <div key={id} className="fsb-conf-row fsb-conf-row-class">
+                  <span
+                    className={`fsb-conf-label fsb-class-label ${hasOverride ? "fsb-conf-override" : ""}`}
+                    title={categories[id] ?? `Clase ${id}`}
+                  >
+                    {categories[id] ?? `Clase ${id}`}
+                    {hasOverride && <span className="fsb-override-dot" />}
+                  </span>
+                  <span className="fsb-conf-value">{value.toFixed(2)}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={value}
+                    onChange={(e) => setPerClassConfidence(id, Number(e.currentTarget.value))}
+                    className="fsb-slider"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-            {confMode === "perclass" && availableClasses.length === 0 && (
-              <p className="fsb-conf-sub">No hay clases disponibles.</p>
-            )}
-          </Section>
-        ) : (
-          <Scale width={50} />
-        )
-      }
-      
+        {confMode === "perclass" && availableClasses.length === 0 && (
+          <p className="fsb-conf-sub">No hay clases disponibles.</p>
+        )}
+      </Section>
 
       {/* ── Classes ── */}
-      {
-        sidebarOpen? (
-          <Section title="Clases">
-            <div className="fsb-class-list">
-              {availableClasses.map((id) => {
-                const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);
-                return (
-                  <label key={id} className="fsb-check-row">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleClass(id)}
-                    />
-                    <span className="fsb-check-label" title={categories[id] ?? `Clase ${id}`}>
-                      {categories[id] ?? `Clase ${id}`}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </Section>
-        ) : (
-          <Tag width={50} />
-        )
-      }
+      <Section title="Clases">
+        <div className="fsb-class-list">
+          {availableClasses.map((id) => {
+            const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);
+            return (
+              <label key={id} className="fsb-check-row">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleClass(id)}
+                />
+                <span className="fsb-check-label" title={categories[id] ?? `Clase ${id}`}>
+                  {categories[id] ?? `Clase ${id}`}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </Section>
 
       {/* ── Split ── */}
-      {
-        sidebarOpen? (
-          <Section title="Split">
-            <div className="fsb-class-list">
-              {availableSplits.map((split) => {
-                const checked = filters.visibleSplits.size === 0 || filters.visibleSplits.has(split);
-                return (
-                  <label key={split} className="fsb-check-row">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSplit(split)}
-                    />
-                    <span className="fsb-check-label">{split}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </Section>
-        ) : (
-          <ChartPie width={50} />
-        )
-      }
+      <Section title="Split">
+        <div className="fsb-class-list">
+          {availableSplits.map((split) => {
+            const checked = filters.visibleSplits.size === 0 || filters.visibleSplits.has(split);
+            return (
+              <label key={split} className="fsb-check-row">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleSplit(split)}
+                />
+                <span className="fsb-check-label">{split}</span>
+              </label>
+            );
+          })}
+        </div>
+      </Section>
     </aside>
   );
 }
