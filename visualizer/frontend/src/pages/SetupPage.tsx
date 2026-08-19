@@ -26,8 +26,9 @@ export default function SetupPage() {
   // DB detection state
   const [dbCheck, setDbCheck] = useState<CheckDatasetResponse | null>(null);
   const [dbCheckLoading, setDbCheckLoading] = useState(false);
-  // "none" = user hasn't chosen yet | "load" = load existing | "recalculate" = re-run inference
-  const [dbChoice, setDbChoice] = useState<"none" | "load" | "recalculate">("none");
+  // "none" = user hasn't chosen yet | "load" = load existing |
+  // "resume" = continue interrupted inference | "recalculate" = re-run inference
+  const [dbChoice, setDbChoice] = useState<"none" | "load" | "resume" | "recalculate">("none");
 
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -63,9 +64,11 @@ export default function SetupPage() {
     try {
       const result = await checkDataset(path.trim());
       setDbCheck(result);
-      // Auto-select "load" if the DB looks healthy; user can override.
+      // Completed DBs load directly; interrupted DBs resume by default.
       if (result.has_db && result.status === "done") {
         setDbChoice("load");
+      } else if (result.has_db && result.can_resume) {
+        setDbChoice("resume");
       } else {
         setDbChoice("recalculate");
       }
@@ -143,13 +146,14 @@ export default function SetupPage() {
         return;
       }
 
-      // --- Create new inference job ---
+      // --- Resume or create a new inference job ---
       setStatusMessage("Creando trabajo de inferencia...");
       const job = await createJob({
         dataset_path: datasetPath.trim(),
         dataset_type: datasetType,
         model_path: modelPath.trim(),
         model_type: modelType,
+        resume: dbChoice === "resume",
       });
 
       let latest = job;
@@ -263,8 +267,11 @@ export default function SetupPage() {
                 {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
                   ? `, reducción ${dbCheck.dimensionality_reduction_components}D calculada`
                   : ", sin reducción calculada"}
-                {dbCheck.status === "error" && (
-                  <span className="setup-db-warn"> (la inferencia anterior fue interrumpida)</span>
+                {dbCheck.can_resume && (
+                  <span className="setup-db-warn">
+                    {" "}
+                    (inferencia interrumpida: quedan {dbCheck.num_images_remaining.toLocaleString()} imágenes)
+                  </span>
                 )}
               </p>
               <div className="setup-db-actions">
@@ -272,10 +279,20 @@ export default function SetupPage() {
                   type="button"
                   className={`setup-db-btn ${dbChoice === "load" ? "setup-db-btn-active" : ""}`}
                   onClick={() => setDbChoice("load")}
-                  disabled={submitting || dbCheck.status === "error"}
+                  disabled={submitting || dbCheck.can_resume}
                 >
                   Cargar existente
                 </button>
+                {dbCheck.can_resume && (
+                  <button
+                    type="button"
+                    className={`setup-db-btn ${dbChoice === "resume" ? "setup-db-btn-active" : ""}`}
+                    onClick={() => setDbChoice("resume")}
+                    disabled={submitting}
+                  >
+                    Seguir
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`setup-db-btn ${dbChoice === "recalculate" ? "setup-db-btn-active" : ""}`}
@@ -333,7 +350,7 @@ export default function SetupPage() {
           </label>
 
           <button type="submit" disabled={!canSubmit}>
-            {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : "Visualizar"}
+            {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : dbChoice === "resume" ? "Seguir" : "Visualizar"}
           </button>
         </form>
         ):(
