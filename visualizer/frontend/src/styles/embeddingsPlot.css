@@ -15,12 +15,14 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0.6rem;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(54, 54, 54, 0.55);
   backdrop-filter: blur(6px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   flex-wrap: nowrap;
   pointer-events: auto;
+  width: fit-content;
+  margin: 10px
 }
 
 .pca-panel-label {
