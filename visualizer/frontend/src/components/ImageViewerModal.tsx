@@ -96,6 +96,8 @@ export default function ImageViewerModal({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
+  const [hoveredRecordId, setHoveredRecordId] = useState<string | null>(null);
+
   const searchRecord = useMemo(
     () => records.find((r) => r.id === searchRecordId) ?? null,
     [records, searchRecordId],
@@ -149,6 +151,20 @@ export default function ImageViewerModal({
   // The same file name can exist in several splits with different (or no) annotations, so we
   // surface the split and the actual GT/prediction counts to make the overlay state unambiguous.
   const groundTruthRecords = useMemo(() => records.filter((r) => r.ground_truth?.bbox), [records]);
+
+  const displayedRecords = useMemo(() => {
+    if (!hoveredRecordId) return records;
+
+    return records.map(r => {
+      if (r.id === hoveredRecordId) {
+        return r;
+      }
+      else {
+        return null;
+      }
+    }).filter(Boolean) as EmbeddingRecordDTO[];
+  }, [records, hoveredRecordId]);
+
   const defectRecords = useMemo(
     () =>
       records.filter((r) => {
@@ -249,7 +265,7 @@ export default function ImageViewerModal({
             <ImageWithBoxes
               imageUrl={imageUrl}
               imagePath={imagePath}
-              records={records}
+              records={displayedRecords}
               minConfidence={effectiveMinConfidence}
               classThresholds={useGlobalFilters ? classThresholds : undefined}
               showGroundTruths={showGroundTruths}
@@ -339,7 +355,9 @@ export default function ImageViewerModal({
                     );
                   }
                   return (
-                    <li key={`pred-${r.id}`}>
+                    <li key={`pred-${r.id}`} onMouseEnter={() => setHoveredRecordId(r.id)} onMouseLeave={() => setHoveredRecordId(null)}
+                      style={{ margin: "0" }}
+                    >
                       <button
                         type="button"
                         className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
