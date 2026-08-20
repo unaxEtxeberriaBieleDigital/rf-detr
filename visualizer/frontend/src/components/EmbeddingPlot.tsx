@@ -84,28 +84,28 @@ export default function EmbeddingPlot({
 
   // Generates a deterministic random-looking color for each class. 
   // HSV gives better visual separation than generating RGB channels independently. 
-  function classColor(classId: number | null): string { 
+  function classColor(classId: number | null): string {
     // Golden-ratio distribution gives well-spaced hues while remaining deterministic. 
-    const seed = classId === null ? 0 : Math.abs(classId); 
-    const hue = (seed * 0.618033988749895) % 1; 
+    const seed = classId === null ? 0 : Math.abs(classId);
+    const hue = (seed * 0.618033988749895) % 1;
     // Small deterministic variation in saturation/value. 
-    const saturation = 0.65 + ((seed * 0.17) % 0.25); 
-    const value = 0.75 + ((seed * 0.13) % 0.2); 
-    const h = hue * 6; const i = Math.floor(h); 
-    const f = h - i; 
-    const p = value * (1 - saturation); 
-    const q = value * (1 - saturation * f); 
-    const t = value * (1 - saturation * (1 - f)); 
-    let r: number; let g: number; let b: number; 
-    switch (i % 6) { 
-      case 0: r = value; g = t; b = p; break; 
-      case 1: r = q; g = value; b = p; break; 
-      case 2: r = p; g = value; b = t; break; 
-      case 3: r = p; g = q; b = value; break; 
-      case 4: r = t; g = p; b = value; break; 
-      default: r = value; g = p; b = q; break; 
-    } 
-    return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round( b * 255, )})`; 
+    const saturation = 0.65 + ((seed * 0.17) % 0.25);
+    const value = 0.75 + ((seed * 0.13) % 0.2);
+    const h = hue * 6; const i = Math.floor(h);
+    const f = h - i;
+    const p = value * (1 - saturation);
+    const q = value * (1 - saturation * f);
+    const t = value * (1 - saturation * (1 - f));
+    let r: number; let g: number; let b: number;
+    switch (i % 6) {
+      case 0: r = value; g = t; b = p; break;
+      case 1: r = q; g = value; b = p; break;
+      case 2: r = p; g = value; b = t; break;
+      case 3: r = p; g = q; b = value; break;
+      case 4: r = t; g = p; b = value; break;
+      default: r = value; g = p; b = q; break;
+    }
+    return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255,)})`;
   }
 
   function classLabel(classId: number | null): string {
@@ -243,11 +243,11 @@ export default function EmbeddingPlot({
         }}
       >
         {pcaPanel}
-        <div 
+        <div
           style={{
-              backgroundColor: "#000000",
-              border: "var(--border-subtle) 2px solid",
-              borderRadius: "var(--radius-lg)"
+            backgroundColor: "#000000",
+            border: "var(--border-subtle) 2px solid",
+            borderRadius: "var(--radius-lg)"
           }}
         >
           <p>
@@ -293,7 +293,26 @@ export default function EmbeddingPlot({
       {reductionRunning ? (
         <LoadingDiv />
       ) : (
-        <div className="embedding-plot-canvas">
+        <div
+          className="embedding-plot-canvas"
+          onPointerDownCapture={(e) => {
+            try {
+              (e.target as Element).setPointerCapture(e.pointerId);
+            } catch (err) {
+              console.warn("No se pudo capturar el puntero", err);
+            }
+          }}
+          onPointerUpCapture={(e) => {
+            try {
+              const target = e.target as Element;
+              if (target.hasPointerCapture(e.pointerId)) {
+                target.releasePointerCapture(e.pointerId);
+              }
+            } catch (err) {
+              console.warn("No se pudo liberar el puntero", err);
+            }
+          }}
+        >
           <Plot
             key={`plot-${dimensions}`}
             data={traces}
