@@ -1,6 +1,15 @@
 import React, { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
-import { PanelLeftClose, Scale, Funnel, Check, Tag, ChartPie } from 'lucide-react';
+import {
+  PanelLeftClose,
+  Funnel,
+  ChartPie,
+  SlidersHorizontal,
+  Tags,
+  Layers,
+  ChevronRight,
+  LucideIcon
+} from 'lucide-react';
 import SegmentedControl from "./SegmentedControl";
 
 // -----------------------------------------------------------------------
@@ -129,22 +138,27 @@ const ALL_QUALITIES: PredQuality[] = ["tp", "fp", "fn", "misclassified"];
 
 function Section({
   title,
+  icon: Icon,
   children,
 }: {
   title: string;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="fsb-section">
+    <div className={`fsb-section ${open ? "fsb-section-open" : ""}`}>
       <button
         type="button"
         className="fsb-section-header"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <span>{title}</span>
-        <span className="fsb-chevron">{open ? "▾" : "▸"}</span>
+        <div className="fsb-section-header-left">
+          <Icon size={18} className="fsb-section-icon" />
+          <span>{title}</span>
+        </div>
+        <ChevronRight size={18} className={`fsb-chevron ${open ? "open" : ""}`} />
       </button>
       {open && <div className="fsb-section-body">{children}</div>}
     </div>
@@ -272,13 +286,13 @@ export default function FilterSidebar({
         <span className="fsb-title">Filtros <Funnel size={18} /></span>
         {activeFilterCount > 0 && (
           <button type="button" className="fsb-reset" onClick={resetAll}>
-            Borrar filtros ({activeFilterCount}) 
+            Borrar filtros ({activeFilterCount})
           </button>
         )}
       </div>
 
       {/* ── Prediction quality ── */}
-      <Section title="Calidad de predicción">
+      <Section title="Calidad de predicción" icon={ChartPie}>
         <div className="fsb-quality-pills">
           {ALL_QUALITIES.map((q) => {
             const active = filters.qualities.size === 0 || filters.qualities.has(q);
@@ -300,7 +314,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Confidence ── */}
-      <Section title="Confianza">
+      <Section title="Confianza" icon={SlidersHorizontal}>
         <div className="conf-type-selector">
           <SegmentedControl
             options={[
@@ -367,7 +381,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Classes ── */}
-      <Section title="Clases">
+      <Section title="Clases" icon={Tags}>
         <div className="fsb-class-list">
           {availableClasses.map((id) => {
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);
@@ -388,7 +402,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Split ── */}
-      <Section title="Split">
+      <Section title="Split" icon={Layers}>
         <div className="fsb-class-list">
           {availableSplits.map((split) => {
             const checked = filters.visibleSplits.size === 0 || filters.visibleSplits.has(split);
