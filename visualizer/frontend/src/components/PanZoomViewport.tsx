@@ -40,7 +40,7 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
   useEffect(() => reset(), [resetKey]);
 
   function clampScale(value: number): number {
-    return Math.min(8, Math.max(1, value));
+    return Math.min(8, Math.max(0.5, value));
   }
 
   return (
