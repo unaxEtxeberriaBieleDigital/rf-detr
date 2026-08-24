@@ -17,7 +17,7 @@ import MultiPanelLayout, { type PanelDefinition } from "../components/MultiPanel
 import { useAppConfig } from "../context/AppContext";
 import type { ClassThresholds, EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
 import LoadingDiv from "../components/LoadingDiv";
-import { PanelLeftOpen, Funnel } from "lucide-react";
+import { Funnel } from "lucide-react";
 import bieleLogo from "../assets/logos/biele-logo.png"
 
 export default function VisualizerPage() {
@@ -28,29 +28,22 @@ export default function VisualizerPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
-  // Semantic search: id of the currently-open search panel (next to the embedding plot),
-  // and the neighbour result being inspected in the full-screen viewer (if any).
+  // Semantic search y Control de Layout
   const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
-  const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(
-    null,
-  );
-
+  const [activePanelIds, setActivePanelIds] = useState<string[]>(["gallery"]);
+  const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(null);
+  
+  console.log('activeSearchId', activeSearchId);
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
   const [classThresholds, setClassThresholds] = useState<ClassThresholds>({});
   const [thresholdsLoading, setThresholdsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Dimensionality-reduction panel state
   const [pcaDims, setPcaDims] = useState<2 | 3>(2);
   const [algorithm, setAlgorithm] = useState<ReductionAlgorithm>("pca");
   const [reductionRunning, setReductionRunning] = useState(false);
   const [reductionError, setReductionError] = useState<string | null>(null);
-
-  // plotRecords – only updated when "Recalcular" is pressed, never on filter changes.
   const [plotRecords, setPlotRecords] = useState<EmbeddingRecordDTO[]>([]);
-
-  // Cluster selection: record IDs selected via lasso/box tool in the scatter plot.
-  // null = no selection active (gallery shows everything that passes the other filters).
   const [clusterSelection, setClusterSelection] = useState<Set<string> | null>(null);
 
   function isJobNotFoundError(err: unknown): boolean {
@@ -71,7 +64,6 @@ export default function VisualizerPage() {
     return recovered.id;
   }
 
-  // Only re-run when the job changes (jobId), not on cosmetic config field updates.
   useEffect(() => {
     if (!config) return;
     setThresholdsLoading(true);
@@ -171,7 +163,6 @@ export default function VisualizerPage() {
       setRecords(refreshed);
       const refreshedIds = new Set(ids);
       setPlotRecords(refreshed.filter((r) => refreshedIds.has(r.id)));
-      // Clear any cluster selection – coords have changed so old selection is stale.
       setClusterSelection(null);
     } catch (e) {
       setReductionError(String(e instanceof Error ? e.message : e));
@@ -180,7 +171,6 @@ export default function VisualizerPage() {
     }
   }
 
-  // filteredRecords: sidebar filters + cluster selection (if active).
   const filteredRecords = useMemo(() => {
     const base = applyFilters(records, filters);
     if (!clusterSelection) return base;
@@ -221,7 +211,7 @@ export default function VisualizerPage() {
   const panelDefinitions = useMemo((): PanelDefinition[] => {
     if (!config) return [];
     
-    return [
+    const defs: PanelDefinition[] = [
       {
         id: "gallery",
         title: "Galería de Imágenes",
@@ -240,7 +230,13 @@ export default function VisualizerPage() {
               const first = filteredRecords.find((r) => r.image_path === imagePath);
               setSelectedRecordId(first?.id ?? null);
             }}
-            onSearchStarted={setActiveSearchId}
+            onSearchStarted={(searchId) => {
+              setActiveSearchId(searchId);
+              // Forzar apertura del panel cuando se inicia una búsqueda
+              setActivePanelIds((prev) => 
+                prev.includes("semantic-search") ? prev : [...prev, "semantic-search"]
+              );
+            }}
           />
         ),
       },
@@ -282,6 +278,25 @@ export default function VisualizerPage() {
         ),
       },
     ];
+
+    // Añadir el panel de Búsqueda Semántica dinámicamente
+    if (activeSearchId) {
+      defs.push({
+        id: "semantic-search",
+        title: "Búsqueda Semántica",
+        closable: false,
+        component: () => (
+          <SemanticSearchPanel
+            jobId={config.jobId}
+            searchId={activeSearchId}
+            categories={config.categories}
+            onOpenResult={(result, imageUrl) => setOpenResult({ result, imageUrl })}
+          />
+        ),
+      });
+    }
+
+    return defs;
   }, [
     config,
     gallerySplitFilter,
@@ -299,6 +314,7 @@ export default function VisualizerPage() {
     classThresholds,
     evaluationThresholds,
     filteredRecordIds,
+    activeSearchId, // Muy importante para que re-renderice al iniciar la búsqueda
   ]);
 
   if (!config) return null;
@@ -312,7 +328,6 @@ export default function VisualizerPage() {
 
   return (
     <div className="visualizer-container">
-      {/* ── Collapsible sidebar ── */}
       <aside className={`visualizer-sidebar${sidebarOpen ? " visualizer-sidebar--open" : ""}`}>
         <div className="visualizer-sidebar-content">
           <FilterSidebar
@@ -329,7 +344,6 @@ export default function VisualizerPage() {
         </div>
       </aside>
 
-      {/* ── Main area ── */}
       <div className={`visualizer-main-wrapper${sidebarOpen ? " visualizer-main-wrapper--shifted" : ""}`}>
         <header className="visualizer-header">
           <div className="visualizer-header-left">
@@ -369,19 +383,16 @@ export default function VisualizerPage() {
           <div className="visualizer-content">
             <div className="visualizer-body">
               <MultiPanelLayout
-                initialVisiblePanels={[panelDefinitions[0]]}
+                activePanelIds={activePanelIds}
+                onActivePanelIdsChange={(newIds) => {
+                  setActivePanelIds(newIds);
+                  // Si el usuario cerró el panel con la '✕', anulamos la búsqueda actual
+                  if (!newIds.includes("semantic-search") && activeSearchId !== null) {
+                    setActiveSearchId(null);
+                  }
+                }}
                 availablePanels={panelDefinitions}
               />
-
-              {activeSearchId && (
-                <SemanticSearchPanel
-                  jobId={config.jobId}
-                  searchId={activeSearchId}
-                  categories={config.categories}
-                  onClose={() => setActiveSearchId(null)}
-                  onOpenResult={(result, imageUrl) => setOpenResult({ result, imageUrl })}
-                />
-              )}
             </div>
           </div>
         )}

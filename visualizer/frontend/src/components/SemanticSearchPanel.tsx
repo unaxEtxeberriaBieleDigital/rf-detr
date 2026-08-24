@@ -6,10 +6,7 @@ import ImageWithBoxes from "./ImageWithBoxes";
 interface SemanticSearchPanelProps {
   jobId: string;
   searchId: string;
-  /** Class id → human readable name. */
   categories: Record<number, string>;
-  onClose: () => void;
-  /** Called when the user clicks a neighbour image, so the caller can open it in the full viewer. */
   onOpenResult: (result: SemanticSearchResultDTO, imageUrl: string) => void;
 }
 
@@ -18,17 +15,10 @@ const MIN_TILE_SIZE = 90;
 const MAX_TILE_SIZE = 320;
 const DEFAULT_TILE_SIZE = 160;
 
-/** Panel shown next to the embedding plot with the progress/results of one semantic-search job.
- *
- *  Keeps polling `/semantic-search/{search_id}` while the job is pending/running, and stops
- *  once it reaches a terminal state. Re-fetches the current status immediately when `searchId`
- *  changes (e.g. reopening a still-running search started earlier).
- */
 export default function SemanticSearchPanel({
   jobId,
   searchId,
   categories,
-  onClose,
   onOpenResult,
 }: SemanticSearchPanelProps) {
   const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(null);
@@ -63,7 +53,6 @@ export default function SemanticSearchPanel({
     };
   }, [jobId, searchId]);
 
-  // Stop polling once the job reaches a terminal state.
   useEffect(() => {
     if (!status) return;
     if (status.status === "done" || status.status === "error") {
@@ -81,12 +70,6 @@ export default function SemanticSearchPanel({
 
   return (
     <section className="visualizer-search-panel">
-      <div className="search-panel-header">
-        <span className="search-panel-title">Búsqueda semántica</span>
-        <button type="button" className="image-viewer-btn" onClick={onClose}>
-          Cerrar
-        </button>
-      </div>
 
       {error && <p className="setup-error">{error}</p>}
 
@@ -96,7 +79,6 @@ export default function SemanticSearchPanel({
           <div className="loader" />
         </>
       }
-      {!error && !status && <p className="image-gallery-loading">Cargando...</p>}
 
       {status && (status.status === "pending" || status.status === "running") && (
         <div className="search-panel-progress">

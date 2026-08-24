@@ -1,71 +1,50 @@
-import { useState, useRef, ReactNode, useEffect } from "react";
+import { useState, useRef, ReactNode } from "react";
 import "../styles/multiPanelLayout.css";
 
 export interface PanelDefinition {
   id: string;
   title: string;
-  component: (onClose: () => void) => ReactNode;
-}
-
-interface VisiblePanel {
-  panelId: string;
-  panelDef: PanelDefinition;
+  closable?: boolean;
+  component: () => ReactNode;
 }
 
 interface MultiPanelLayoutProps {
-  /** Initial visible panels. Typically starts with just the default (ImageGallery). */
-  initialVisiblePanels: PanelDefinition[];
-  /** All available panels that can be added via the "+" button. */
+  /** Array of active panel IDs managed by the parent */
+  activePanelIds: string[];
+  /** Callback fired when a panel is added or removed */
+  onActivePanelIdsChange: (ids: string[]) => void;
+  /** All available panels that can be displayed */
   availablePanels: PanelDefinition[];
 }
 
 export default function MultiPanelLayout({
-  initialVisiblePanels,
+  activePanelIds,
+  onActivePanelIdsChange,
   availablePanels,
 }: MultiPanelLayoutProps) {
-  const [visiblePanels, setVisiblePanels] = useState<VisiblePanel[]>(
-    initialVisiblePanels.map((panel) => ({
-      panelId: `${panel.id}-${Date.now()}`,
-      panelDef: panel,
-    }))
-  );
-
   const [showPanelMenu, setShowPanelMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // When panel definitions change (e.g., filter updates), sync the component callbacks
-  // for already-visible panels to get fresh props/data
-  useEffect(() => {
-    setVisiblePanels((current) => {
-      return current.map((visible) => {
-        const updated = availablePanels.find((p) => p.id === visible.panelDef.id);
-        if (updated && updated !== visible.panelDef) {
-          return { ...visible, panelDef: updated };
-        }
-        return visible;
-      });
-    });
-  }, [availablePanels]);
+  // Derivamos los paneles visibles directamente de los IDs activos proporcionados por el padre
+  const visiblePanels = activePanelIds
+    .map((id) => availablePanels.find((p) => p.id === id))
+    .filter((p): p is PanelDefinition => p !== undefined);
 
-  const handleAddPanel = (panelDef: PanelDefinition) => {
-    const newPanel: VisiblePanel = {
-      panelId: `${panelDef.id}-${Date.now()}`,
-      panelDef,
-    };
-    setVisiblePanels([...visiblePanels, newPanel]);
+  const handleAddPanel = (panelId: string) => {
+    onActivePanelIdsChange([...activePanelIds, panelId]);
     setShowPanelMenu(false);
   };
 
   const handleRemovePanel = (panelId: string) => {
-    // Never allow removing all panels - keep at least one
-    if (visiblePanels.length <= 1) return;
-    setVisiblePanels(visiblePanels.filter((p) => p.panelId !== panelId));
+    // Nunca permitir cerrar todos los paneles - mantener al menos uno
+    if (activePanelIds.length <= 1) return;
+    onActivePanelIdsChange(activePanelIds.filter((id) => id !== panelId));
   };
 
   const panelWidth = `calc(100% / ${visiblePanels.length})`;
 
-  // Filter out panels that are already visible
-  const visiblePanelIds = new Set(visiblePanels.map((p) => p.panelDef.id));
+  // Filtrar los paneles que ya están visibles para el menú "+"
+  const visiblePanelIds = new Set(activePanelIds);
   const panelsToAdd = availablePanels.filter((panel) => !visiblePanelIds.has(panel.id));
 
   return (
@@ -86,7 +65,7 @@ export default function MultiPanelLayout({
                 <button
                   key={panel.id}
                   className="panel-menu-item"
-                  onClick={() => handleAddPanel(panel)}
+                  onClick={() => handleAddPanel(panel.id)}
                 >
                   + {panel.title}
                 </button>
@@ -97,22 +76,22 @@ export default function MultiPanelLayout({
       </div>
 
       <div className="panels-container">
-        {visiblePanels.map((panel) => (
+        {visiblePanels.map((panelDef) => (
           <div
-            key={panel.panelId}
+            key={panelDef.id}
             className="panel-wrapper"
             style={{ width: panelWidth }}
           >
             <div className="panel-header">
               <div className="panel-tabs">
                 <div className="panel-title">
-                  {panel.panelDef.title}
+                  {panelDef.title}
                 </div>
               </div>
-              {visiblePanels.length > 1 && (
+              {visiblePanels.length > 1 && panelDef.closable !== false && (
                 <button
                   className="close-button"
-                  onClick={() => handleRemovePanel(panel.panelId)}
+                  onClick={() => handleRemovePanel(panelDef.id)}
                   title="Cerrar panel"
                   aria-label="Cerrar panel"
                 >
@@ -121,7 +100,7 @@ export default function MultiPanelLayout({
               )}
             </div>
             <div className="panel-content">
-              {panel.panelDef.component(() => handleRemovePanel(panel.panelId))}
+              {panelDef.component()}
             </div>
           </div>
         ))}
