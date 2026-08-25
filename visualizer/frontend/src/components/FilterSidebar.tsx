@@ -7,6 +7,8 @@ import {
   SlidersHorizontal,
   Tags,
   Layers,
+  Search,
+  X,
   ChevronRight,
   LucideIcon
 } from 'lucide-react';
@@ -24,6 +26,8 @@ export interface ClassConfidence {
 }
 
 export interface FilterState {
+  /** Texto de búsqueda por nombre/ID de registro o imagen. */
+  searchQuery: string;
   /** Which prediction-quality categories are shown (empty = all). */
   qualities: Set<PredQuality>;
   /** Global minimum confidence (0–1). Applied when perClassConfidence is empty. */
@@ -38,6 +42,7 @@ export interface FilterState {
 
 export function defaultFilterState(): FilterState {
   return {
+    searchQuery: "",
     qualities: new Set(),
     minConfidence: 0,
     perClassConfidence: new Map(),
@@ -79,7 +84,20 @@ export function applyFilters(
   records: EmbeddingRecordDTO[],
   filters: FilterState,
 ): EmbeddingRecordDTO[] {
+  const query = filters.searchQuery.trim().toLowerCase();
+
   return records.filter((r) => {
+    // Name / Image search filter
+    if (query) {
+      const recordName = (
+        (r as any).id ??
+        (r as any).image_path ??
+        ""
+      ).toString().toLowerCase();
+
+      if (!recordName.includes(query)) return false;
+    }
+
     // Split filter
     if (filters.visibleSplits.size > 0 && !filters.visibleSplits.has(r.split)) return false;
 
@@ -112,8 +130,8 @@ interface FilterSidebarProps {
   categories: Record<number, string>;
   filters: FilterState;
   onChange: (next: FilterState) => void;
-  sidebarOpen: boolean,
-  setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>,
+  sidebarOpen: boolean;
+  setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 // -----------------------------------------------------------------------
@@ -179,6 +197,7 @@ export default function FilterSidebar({
   setSidebarOpen,
 }: FilterSidebarProps) {
   const [confMode, setConfMode] = useState<"global" | "perclass">("global");
+
   // Derived collections
   const availableSplits = useMemo(
     () => Array.from(new Set(records.map((r) => r.split))).sort(),
@@ -205,8 +224,21 @@ export default function FilterSidebar({
   // confidence threshold is recounted as "fn" (its ground truth is now unmatched) instead
   // of just vanishing, which is why the fn badge grows as the threshold rises.
   const qualityCounts = useMemo(() => {
+    const query = filters.searchQuery.trim().toLowerCase();
     const counts: Record<string, number> = { tp: 0, fp: 0, fn: 0, misclassified: 0 };
+
     for (const r of records) {
+      // Search filter
+      if (query) {
+        const recordName = (
+          (r as any).id ??
+          (r as any).image_path ??
+          ""
+        ).toString().toLowerCase();
+
+        if (!recordName.includes(query)) continue;
+      }
+
       if (filters.visibleSplits.size > 0 && !filters.visibleSplits.has(r.split)) continue;
 
       const classId = r.prediction?.class_id ?? r.ground_truth?.class_id ?? null;
@@ -221,6 +253,10 @@ export default function FilterSidebar({
   }, [records, filters]);
 
   // ---- Handlers --------------------------------------------------------
+
+  function handleSearchChange(query: string) {
+    onChange({ ...filters, searchQuery: query });
+  }
 
   function toggleQuality(q: PredQuality) {
     const next = new Set(filters.qualities);
@@ -256,6 +292,7 @@ export default function FilterSidebar({
   }
 
   const activeFilterCount =
+    (filters.searchQuery.trim() !== "" ? 1 : 0) +
     filters.qualities.size +
     filters.visibleClasses.size +
     filters.visibleSplits.size +
@@ -290,6 +327,20 @@ export default function FilterSidebar({
           </button>
         )}
       </div>
+
+      {/* ── Nombre  ── */}
+      <Section title="Nombre de imagen" icon={Search}>
+        <div className="fsb-search-row">
+          <input
+            type="text"
+            className="fsb-search-input"
+            placeholder="Buscar por nombre..."
+            value={filters.searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+          />
+          <X/>
+        </div>
+      </Section>
 
       {/* ── Prediction quality ── */}
       <Section title="Calidad de predicción" icon={ChartPie}>
