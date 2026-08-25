@@ -151,6 +151,12 @@ def run_semantic_search(
             if existing is None or best_result.distance < existing.distance:
                 best_by_group[group_key] = best_result
 
+        # Actualizar la lista expuesta a la API con el Top-K actual
+        def update_top_k() -> None:
+            search_job.results = heapq.nsmallest(
+                search_job.k, best_by_group.values(), key=lambda r: r.distance
+            )
+
         processed = 0
         num_cache_hits = 0
         pending = []
@@ -160,8 +166,17 @@ def run_semantic_search(
                 consider_unit(unit.id, unit.group_key, cache.get_cached(unit.id))
                 processed += 1
                 search_job.num_images_processed = processed
+                
+                # Emitimos resultados parciales de la caché (cada 50 iteraciones porque la caché es muy rápida)
+                if processed % 50 == 0:
+                    update_top_k()
+                    
                 continue
             pending.append(unit)
+
+        # Actulizamos una última vez los resultados de la caché antes de hacer la inferencia
+        if num_cache_hits > 0:
+            update_top_k()
 
         for batch_start in range(0, len(pending), _BATCH_SIZE):
             batch_units = pending[batch_start : batch_start + _BATCH_SIZE]
@@ -174,13 +189,16 @@ def run_semantic_search(
             processed += len(batch_units)
             search_job.num_images_processed = processed
             logger.info(f"[search {search_job.id}] {processed}/{len(units)} unit(s) scanned")
+            
+            # Por cada lote procesado por la red neuronal actualiza
+            update_top_k()
 
         logger.info(
             f"[search {search_job.id}] {num_cache_hits}/{len(units)} unit(s) served from cache"
         )
 
-        top_k = heapq.nsmallest(search_job.k, best_by_group.values(), key=lambda r: r.distance)
-        search_job.results = top_k
+        # Actualización final
+        update_top_k()
         search_job.status = "done"
         logger.info(
             f"[search {search_job.id}] done: kept {len(search_job.results)} neighbour(s) "
@@ -190,7 +208,6 @@ def run_semantic_search(
         logger.error(f"[search {search_job.id}] failed: {e}", exc_info=True)
         search_job.error = str(e)
         search_job.status = "error"
-
 
 def _cosine_distance(query_vec: np.ndarray, query_norm: float, vec: np.ndarray) -> float:
     """Return ``1 - cosine_similarity(query_vec, vec)``, in ``[0, 2]`` (0 = identical)."""

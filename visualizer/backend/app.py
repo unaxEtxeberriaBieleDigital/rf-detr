@@ -1213,26 +1213,27 @@ def _get_semantic_search_source(source_type: str) -> BaseSemanticSearchSource:
 
 def _search_job_to_response(search_job: SearchJob, include_results: bool = False) -> SemanticSearchStatusResponse:
     results = None
-    if include_results and search_job.status == "done":
-        source = _get_semantic_search_source(search_job.source_type)
-        results = []
-        for r in search_job.results:
-            try:
-                preview = source.render_result_preview(r)
-            except FileNotFoundError as e:
-                logger.warning(f"Skipping semantic-search result, could not render preview: {e}")
-                continue
-            preview_data_url = f"data:{preview.media_type};base64,{base64.b64encode(preview.content).decode('ascii')}"
-            results.append(
-                SemanticSearchResultDTO(
-                    image_path=r.image_path,
-                    bbox=preview.bbox,
-                    confidence=r.prediction.confidence,
-                    class_id=r.prediction.class_id,
-                    distance=r.distance,
-                    preview_data_url=preview_data_url,
-                )
+    source = _get_semantic_search_source(search_job.source_type)
+    results = []
+
+    for r in search_job.results:
+
+        try:
+            preview = source.render_result_preview(r)
+        except FileNotFoundError as e:
+            logger.warning(f"Skipping semantic-search result, could not render preview: {e}")
+            continue
+        preview_data_url = f"data:{preview.media_type};base64,{base64.b64encode(preview.content).decode('ascii')}"
+        results.append(
+            SemanticSearchResultDTO(
+                image_path=r.image_path,
+                bbox=preview.bbox,
+                confidence=r.prediction.confidence,
+                class_id=r.prediction.class_id,
+                distance=r.distance,
+                preview_data_url=preview_data_url,
             )
+        )
     return SemanticSearchStatusResponse(
         id=search_job.id,
         parent_job_id=search_job.parent_job_id,

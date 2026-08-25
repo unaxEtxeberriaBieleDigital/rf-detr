@@ -96,7 +96,7 @@ export default function SemanticSearchPanel({
         <p className="setup-error">{status.error ?? "Error desconocido"}</p>
       )}
 
-      {status && status.status === "done" && (
+      {status && (
         <>
           <p className="search-panel-summary">
             {status.results?.length ?? 0} vecino(s) encontrado(s)
