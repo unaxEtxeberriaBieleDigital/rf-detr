@@ -1,4 +1,5 @@
 import type {
+  CancelSemanticSearchResponse,
   CheckDatasetResponse,
   CreateJobRequest,
   DimensionalityReductionStatusResponse,
@@ -165,6 +166,15 @@ export function listSemanticSearches(jobId: string): Promise<SemanticSearchStatu
 
 export function getSemanticSearch(jobId: string, searchId: string): Promise<SemanticSearchStatusResponse> {
   return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
+}
+
+export function cancelSemanticSearch(jobId: string, searchId: string): Promise<CancelSemanticSearchResponse> {
+  return request<CancelSemanticSearchResponse>(
+    `/api/v1/jobs/${jobId}/semantic-search/${searchId}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 export function getJobEvaluation(

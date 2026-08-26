@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { getSemanticSearch } from "../api/client";
+import { getSemanticSearch, cancelSemanticSearch } from "../api/client";
 import type { SemanticSearchResultDTO, SemanticSearchStatusResponse } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 
@@ -55,7 +55,7 @@ export default function SemanticSearchPanel({
 
   useEffect(() => {
     if (!status) return;
-    if (status.status === "done" || status.status === "error") {
+    if (status.status === "done" || status.status === "error" || status.status === "cancelled") {
       if (pollRef.current) {
         window.clearInterval(pollRef.current);
         pollRef.current = null;
@@ -73,7 +73,7 @@ export default function SemanticSearchPanel({
 
       {error && <p className="setup-error">{error}</p>}
 
-      {!error && !status && 
+      {!error && !status &&
         <>
           <p className="image-gallery-loading">Cargando...</p>
           <div className="loader" />
@@ -98,9 +98,17 @@ export default function SemanticSearchPanel({
 
       {status && (
         <>
-          <p className="search-panel-summary">
-            {status.results?.length ?? 0} vecino(s) encontrado(s)
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0px 10px' }}>
+            <p className="search-panel-summary">
+              {status.results?.length ?? 0} vecino(s) encontrado(s)
+            </p>
+            {status.status !== "cancelled" &&
+              <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancelar búsqueda</button>
+            }
+            {status && (status.status === "cancelled") && (
+              <p className="setup-error">Búsqueda semántica cancelada.</p>
+            )}
+          </div>
           <div className="search-panel-toolbar">
             <label htmlFor="ss-zoom-slider" className="search-panel-zoom-label">
               Tamaño: {tileSize}px

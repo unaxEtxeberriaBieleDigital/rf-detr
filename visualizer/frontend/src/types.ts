@@ -114,9 +114,15 @@ export interface SemanticSearchStatusResponse {
   query_image_path: string;
   search_path: string;
   k: number;
-  status: "pending" | "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error" | "cancelled";
   error: string | null;
   num_images_total: number;
   num_images_processed: number;
   results: SemanticSearchResultDTO[] | null;
+}
+
+export interface CancelSemanticSearchResponse {
+  message: string;
+  search_id: string,
+  status: string
 }
