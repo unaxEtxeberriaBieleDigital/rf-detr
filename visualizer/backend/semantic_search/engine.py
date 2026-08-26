@@ -39,7 +39,7 @@ from visualizer.backend.semantic_search.cache import SearchCache
 
 logger = get_logger()
 
-SearchStatus = Literal["pending", "running", "done", "error"]
+SearchStatus = Literal["pending", "running", "done", "error", "cancelled"]
 
 # Number of units sent to the model per inference call.
 _BATCH_SIZE = 8
@@ -161,6 +161,11 @@ def run_semantic_search(
         num_cache_hits = 0
         pending = []
         for unit in units:
+
+            if search_job.status == "cancelled":
+                logger.info(f"[search {search_job.id}] cancelled during cache check.")
+                break
+
             if cache.is_scanned(unit.id):
                 num_cache_hits += 1
                 consider_unit(unit.id, unit.group_key, cache.get_cached(unit.id))
@@ -179,6 +184,11 @@ def run_semantic_search(
             update_top_k()
 
         for batch_start in range(0, len(pending), _BATCH_SIZE):
+
+            if search_job.status == "cancelled":
+                logger.info(f"[search] {search_job.id}] cancelled during cache check.")
+                break
+
             batch_units = pending[batch_start : batch_start + _BATCH_SIZE]
             batch_detections = source.process_batch(model, batch_units)
 
@@ -199,11 +209,17 @@ def run_semantic_search(
 
         # Actualización final
         update_top_k()
-        search_job.status = "done"
-        logger.info(
-            f"[search {search_job.id}] done: kept {len(search_job.results)} neighbour(s) "
-            f"out of {len(best_by_group)} group(s) scanned"
-        )
+
+        if search_job.status != "cancelled":
+            search_job.status = "done"
+            logger.warning("aquí no deberíamos haber llegado")
+            logger.info(
+                f"[search {search_job.id}] done: kept {len(search_job.results)} neighbour(s) "
+                f"out of {len(best_by_group)} group(s) scanned"
+            )
+        else:
+            logger.info(f"[search {search_job.id}] finished early due to cancellation.")
+
     except Exception as e:
         logger.error(f"[search {search_job.id}] failed: {e}", exc_info=True)
         search_job.error = str(e)
