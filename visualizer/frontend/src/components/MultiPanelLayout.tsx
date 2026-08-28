@@ -49,54 +49,51 @@ export default function MultiPanelLayout({
 
   return (
     <div className="multi-panel-layout">
-      <div className="panels-top-bar">
-        <div className="add-panel-container" ref={menuRef}>
-          <button
-            className="add-panel-button"
-            onClick={() => setShowPanelMenu(!showPanelMenu)}
-            title="Agregar panel"
-            aria-label="Agregar panel"
-          >
-            +
-          </button>
-          {showPanelMenu && panelsToAdd.length > 0 && (
-            <div className="panel-menu">
-              {panelsToAdd.map((panel) => (
-                <button
-                  key={panel.id}
-                  className="panel-menu-item"
-                  onClick={() => handleAddPanel(panel.id)}
-                >
-                  + {panel.title}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       <div className="panels-container">
-        {visiblePanels.map((panelDef) => (
+        {visiblePanels.map((panelDef, idx) => (
           <div
             key={panelDef.id}
             className="panel-wrapper"
             style={{ width: panelWidth }}
           >
             <div className="panel-header">
-              <div className="panel-tabs">
-                <div className="panel-title">
-                  {panelDef.title}
-                </div>
+              <div className="panel-title-group">
+                <span className="panel-title">{panelDef.title}</span>
+                {visiblePanels.length > 1 && panelDef.closable !== false && (
+                  <button
+                    className="close-button"
+                    onClick={() => handleRemovePanel(panelDef.id)}
+                    title="Cerrar panel"
+                    aria-label="Cerrar panel"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
-              {visiblePanels.length > 1 && panelDef.closable !== false && (
-                <button
-                  className="close-button"
-                  onClick={() => handleRemovePanel(panelDef.id)}
-                  title="Cerrar panel"
-                  aria-label="Cerrar panel"
-                >
-                  ✕
-                </button>
+              {idx == visiblePanels.length - 1 && (
+                <div className="add-panel-container" ref={menuRef}>
+                  <button
+                    className="add-panel-button"
+                    onClick={() => setShowPanelMenu(!showPanelMenu)}
+                    title="Agregar panel"
+                    aria-label="Agregar panel"
+                  >
+                    +
+                  </button>
+                  {showPanelMenu && panelsToAdd.length > 0 && (
+                    <div className="panel-menu">
+                      {panelsToAdd.map((panel) => (
+                        <button
+                          key={panel.id}
+                          className="panel-menu-item"
+                          onClick={() => handleAddPanel(panel.id)}
+                        >
+                          + {panel.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <div className="panel-content">
@@ -104,6 +101,8 @@ export default function MultiPanelLayout({
             </div>
           </div>
         ))}
+
+        
       </div>
     </div>
   );
