@@ -100,12 +100,6 @@
   flex-wrap: wrap;
 }
 
-.visualizer-subtitle {
-  color: var(--text-secondary);
-  font-size: 0.85em;
-  word-break: break-all;
-}
-
 /* Content below header */
 .visualizer-content {
   display: flex;
