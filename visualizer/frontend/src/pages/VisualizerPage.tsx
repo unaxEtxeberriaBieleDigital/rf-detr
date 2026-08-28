@@ -338,7 +338,6 @@ export default function VisualizerPage() {
               setFilters(next);
               setClusterSelection(null);
             }}
-            sidebarOpen={sidebarOpen}
             setSidebarOpen={setSidebarOpen}
           />
         </div>
