@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import type { EmbeddingRecordDTO } from "../types";
+import CheckBox from "./Checkbox";
 import {
   PanelLeftClose,
   Funnel,
@@ -438,13 +439,9 @@ export default function FilterSidebar({
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);
             return (
               <label key={id} className="fsb-check-row">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleClass(id)}
-                />
+                <CheckBox checked={checked} onChange={() => toggleClass(id)} />
                 <span className="fsb-check-label" title={categories[id] ?? `Clase ${id}`}>
-                  {categories[id] ?? `Clase ${id}`}
+                  <strong>{categories[id] ?? `Clase ${id}`}</strong>
                 </span>
               </label>
             );
@@ -459,11 +456,7 @@ export default function FilterSidebar({
             const checked = filters.visibleSplits.size === 0 || filters.visibleSplits.has(split);
             return (
               <label key={split} className="fsb-check-row">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleSplit(split)}
-                />
+                <CheckBox checked={checked} onChange={() => toggleSplit(split)} />
                 <span className="fsb-check-label">{split}</span>
               </label>
             );
