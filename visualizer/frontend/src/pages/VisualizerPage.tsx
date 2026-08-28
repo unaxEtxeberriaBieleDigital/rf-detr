@@ -362,13 +362,6 @@ export default function VisualizerPage() {
             )}
           </div>
 
-          <div>
-            <h1>RF-DETR Visualizer</h1>
-            <p className="visualizer-subtitle">
-              Dataset: <code>{config.datasetPath}</code> · Modelo: <code>{config.modelPath}</code>
-            </p>
-          </div>
-
           <div className="visualizer-header-right">
             <button className="secondary" onClick={reset}>
               Nueva investigación
