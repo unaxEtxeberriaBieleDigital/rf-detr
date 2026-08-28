@@ -163,7 +163,10 @@ def run_semantic_search(
         for unit in units:
 
             if search_job.status == "cancelled":
-                logger.info(f"[search {search_job.id}] cancelled during cache check.")
+                logger.info(
+                    f"[search {search_job.id}] cancelled during cache check "
+                    f"({processed}/{len(units)} unit(s) scanned)."
+                )
                 break
 
             if cache.is_scanned(unit.id):
@@ -186,7 +189,10 @@ def run_semantic_search(
         for batch_start in range(0, len(pending), _BATCH_SIZE):
 
             if search_job.status == "cancelled":
-                logger.info(f"[search] {search_job.id}] cancelled during cache check.")
+                logger.info(
+                    f"[search {search_job.id}] cancelled during batch inference "
+                    f"({processed}/{len(units)} unit(s) scanned)."
+                )
                 break
 
             batch_units = pending[batch_start : batch_start + _BATCH_SIZE]
@@ -212,13 +218,15 @@ def run_semantic_search(
 
         if search_job.status != "cancelled":
             search_job.status = "done"
-            logger.warning("aquí no deberíamos haber llegado")
             logger.info(
                 f"[search {search_job.id}] done: kept {len(search_job.results)} neighbour(s) "
                 f"out of {len(best_by_group)} group(s) scanned"
             )
         else:
-            logger.info(f"[search {search_job.id}] finished early due to cancellation.")
+            logger.info(
+                f"[search {search_job.id}] cancelled: {processed}/{len(units)} unit(s) scanned, "
+                f"kept {len(search_job.results)} neighbour(s) before stopping"
+            )
 
     except Exception as e:
         logger.error(f"[search {search_job.id}] failed: {e}", exc_info=True)

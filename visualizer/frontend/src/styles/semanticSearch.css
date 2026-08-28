@@ -229,10 +229,24 @@
   transition: width 0.3s ease;
 }
 
+.ss-progress-fill-done {
+  background: var(--success);
+}
+
+.ss-progress-fill-cancelled {
+  background: var(--warning);
+}
+
 .ss-progress-label {
   font-size: 0.78rem;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.search-panel-status-message {
+  padding: 0 0.8rem;
+  font-size: 0.8rem;
+  margin: 0.3rem 0 0;
 }
 
 .ss-results {

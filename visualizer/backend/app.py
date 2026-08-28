@@ -892,7 +892,7 @@ def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResp
         response_model=dict,
 )
 def cancel_semantic_search(job_id: str, search_id: str) -> dict:
-    _get_job_or_404
+    _get_job_or_404(job_id)
     search_job = _get_search_job_or_404(search_id)
 
     if search_job.status in ["done", "error", "cancelled"]:

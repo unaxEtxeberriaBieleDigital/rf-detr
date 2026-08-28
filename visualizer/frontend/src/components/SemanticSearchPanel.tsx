@@ -65,8 +65,10 @@ export default function SemanticSearchPanel({
 
   const progressPct = useMemo(() => {
     if (!status || status.num_images_total === 0) return 0;
-    return Math.round((status.num_images_processed / status.num_images_total) * 100);
+    return Math.min(100, Math.round((status.num_images_processed / status.num_images_total) * 100));
   }, [status]);
+
+  const isActive = status?.status === "pending" || status?.status === "running";
 
   return (
     <section className="visualizer-search-panel">
@@ -80,14 +82,22 @@ export default function SemanticSearchPanel({
         </>
       }
 
-      {status && (status.status === "pending" || status.status === "running") && (
+      {status && status.status !== "error" && (
         <div className="search-panel-progress">
           <div className="ss-progress-bar">
-            <div className="ss-progress-fill" style={{ width: `${progressPct}%` }} />
+            <div
+              className={`ss-progress-fill ss-progress-fill-${status.status}`}
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
           <p className="ss-progress-label">
-            {status.num_images_processed.toLocaleString()} / {status.num_images_total.toLocaleString()}{" "}
-            imágenes escaneadas
+            {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
+            {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
+              `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas (${progressPct}%)`}
+            {status.status === "done" &&
+              `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas`}
+            {status.status === "cancelled" &&
+              `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
           </p>
         </div>
       )}
@@ -96,18 +106,23 @@ export default function SemanticSearchPanel({
         <p className="setup-error">{status.error ?? "Error desconocido"}</p>
       )}
 
+      {status && status.status === "done" && (
+        <p className="ss-status-done search-panel-status-message">✓ Búsqueda finalizada correctamente.</p>
+      )}
+
+      {status && status.status === "cancelled" && (
+        <p className="setup-error">Búsqueda cancelada por el usuario.</p>
+      )}
+
       {status && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0px 10px' }}>
             <p className="search-panel-summary">
               {status.results?.length ?? 0} vecino(s) encontrado(s)
             </p>
-            {status.status !== "cancelled" &&
+            {isActive &&
               <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancelar búsqueda</button>
             }
-            {status && (status.status === "cancelled") && (
-              <p className="setup-error">Búsqueda semántica cancelada.</p>
-            )}
           </div>
           <div className="search-panel-toolbar">
             <label htmlFor="ss-zoom-slider" className="search-panel-zoom-label">
