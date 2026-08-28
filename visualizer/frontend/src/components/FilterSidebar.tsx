@@ -131,7 +131,6 @@ interface FilterSidebarProps {
   categories: Record<number, string>;
   filters: FilterState;
   onChange: (next: FilterState) => void;
-  sidebarOpen: boolean;
   setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
@@ -194,7 +193,6 @@ export default function FilterSidebar({
   categories,
   filters,
   onChange,
-  sidebarOpen,
   setSidebarOpen,
 }: FilterSidebarProps) {
   const [confMode, setConfMode] = useState<"global" | "perclass">("global");
