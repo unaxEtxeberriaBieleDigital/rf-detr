@@ -33,8 +33,8 @@ export default function VisualizerPage() {
   const [activePanelIds, setActivePanelIds] = useState<string[]>(["gallery"]);
   const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(null);
 
-  console.log('activeSearchId', activeSearchId);
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
+  const [confMode, setConfMode] = useState<"global" | "perclass">("global");
   const [classThresholds, setClassThresholds] = useState<ClassThresholds>({});
   const [thresholdsLoading, setThresholdsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -72,6 +72,7 @@ export default function VisualizerPage() {
     setThresholdsLoading(true);
     setClassThresholds({});
     setFilters(defaultFilterState());
+    setConfMode("global");
     if (
       config.dimensionalityReductionComponents === 2
       || config.dimensionalityReductionComponents === 3
@@ -156,6 +157,7 @@ export default function VisualizerPage() {
         Object.entries(nextThresholds).map(([classId, threshold]) => [Number(classId), threshold]),
       ),
     }));
+    setConfMode("perclass");
   }
 
   async function handleComputeReduction(): Promise<void> {
@@ -357,6 +359,8 @@ export default function VisualizerPage() {
               setFilters(next);
               setClusterSelection(null);
             }}
+            confMode={confMode}
+            onConfModeChange={setConfMode}
             setSidebarOpen={setSidebarOpen}
           />
         </div>

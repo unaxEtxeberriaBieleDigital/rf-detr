@@ -131,6 +131,8 @@ interface FilterSidebarProps {
   categories: Record<number, string>;
   filters: FilterState;
   onChange: (next: FilterState) => void;
+  confMode: "global" | "perclass";
+  onConfModeChange: (mode: "global" | "perclass") => void;
   setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
@@ -193,9 +195,10 @@ export default function FilterSidebar({
   categories,
   filters,
   onChange,
+  confMode,
+  onConfModeChange,
   setSidebarOpen,
 }: FilterSidebarProps) {
-  const [confMode, setConfMode] = useState<"global" | "perclass">("global");
 
   // Derived collections
   const availableSplits = useMemo(
@@ -300,6 +303,7 @@ export default function FilterSidebar({
 
   function resetAll() {
     onChange(defaultFilterState());
+    onConfModeChange("global");
   }
 
   // ---- Render ----------------------------------------------------------
@@ -372,7 +376,7 @@ export default function FilterSidebar({
               { value: "perclass", label: "Por clase" },
             ]}
             value={confMode}
-            onChange={setConfMode}
+            onChange={onConfModeChange}
           />
         </div>
 
