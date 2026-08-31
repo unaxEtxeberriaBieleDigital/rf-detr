@@ -53,7 +53,7 @@ export interface GetJobRecordsParams {
   offset?: number;
 }
 
-export function getJobRecords(jobId: string, params: GetJobRecordsParams = {}): Promise<EmbeddingRecordDTO[]> {
+export function getJobRecords(jobId: string, params: GetJobRecordsParams = {}, signal?: AbortSignal): Promise<EmbeddingRecordDTO[]> {
   const search = new URLSearchParams();
   if (params.split) search.set("split", params.split);
   if (params.status) search.set("status", params.status);
@@ -61,7 +61,7 @@ export function getJobRecords(jobId: string, params: GetJobRecordsParams = {}): 
   search.set("limit", String(params.limit ?? 2000));
   search.set("offset", String(params.offset ?? 0));
 
-  return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records?${search.toString()}`);
+  return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records?${search.toString()}`, { signal });
 }
 
 export interface GetJobImagePathsParams {
@@ -204,6 +204,7 @@ export function getJobOptimalThreshold(
   metricName: string,
   numThresholds = 100,
   classId?: number,
+  signal?: AbortSignal,
 ): Promise<OptimalThresholdResponse> {
   const search = new URLSearchParams({
     metric: metricName,
@@ -212,5 +213,6 @@ export function getJobOptimalThreshold(
   if (classId !== undefined) search.set("class_id", String(classId));
   return request<OptimalThresholdResponse>(
     `/api/v1/jobs/${jobId}/optimal-threshold?${search.toString()}`,
+    { signal }
   );
 }

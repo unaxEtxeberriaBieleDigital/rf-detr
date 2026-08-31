@@ -32,7 +32,7 @@ export default function VisualizerPage() {
   const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
   const [activePanelIds, setActivePanelIds] = useState<string[]>(["gallery"]);
   const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(null);
-  
+
   console.log('activeSearchId', activeSearchId);
   const [filters, setFilters] = useState<FilterState>(defaultFilterState());
   const [classThresholds, setClassThresholds] = useState<ClassThresholds>({});
@@ -66,6 +66,9 @@ export default function VisualizerPage() {
 
   useEffect(() => {
     if (!config) return;
+
+    const controller = new AbortController();
+
     setThresholdsLoading(true);
     setClassThresholds({});
     setFilters(defaultFilterState());
@@ -76,36 +79,48 @@ export default function VisualizerPage() {
       setPcaDims(config.dimensionalityReductionComponents);
     }
     setLoading(true);
-    getAllRecords(config.jobId)
+    getAllRecords(config.jobId, controller.signal)
       .then(async (all) => {
+        if (controller.signal.aborted) return;
         setRecords(all);
         setPlotRecords(all);
-        await calculateOptimalClassThresholds(config.jobId, all);
+        await calculateOptimalClassThresholds(config.jobId, all, controller.signal);
       })
       .catch(async (e) => {
+        if (e.name === 'AbortError' || e.name === 'CancelledError') {
+          console.log('Peticiones canceladas correctamente');
+          return;
+        }
+
         if (!isJobNotFoundError(e)) {
           throw e;
         }
         const recoveredJobId = await recoverJobForDataset();
-        const all = await getAllRecords(recoveredJobId);
+        const all = await getAllRecords(recoveredJobId, controller.signal);
+        if (controller.signal.aborted) return;
         setRecords(all);
         setPlotRecords(all);
-        await calculateOptimalClassThresholds(recoveredJobId, all);
+        await calculateOptimalClassThresholds(recoveredJobId, all, controller.signal);
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => {
+        if (controller.signal.aborted) return;
         setLoading(false);
         setThresholdsLoading(false);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => {
+      controller.abort();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.jobId]);
 
-  async function getAllRecords(jobId: string): Promise<EmbeddingRecordDTO[]> {
+  async function getAllRecords(jobId: string, signal?: AbortSignal): Promise<EmbeddingRecordDTO[]> {
     const pageSize = 2000;
     let offset = 0;
     const all: EmbeddingRecordDTO[] = [];
     while (true) {
-      const page = await getJobRecords(jobId, { limit: pageSize, offset });
+      const page = await getJobRecords(jobId, { limit: pageSize, offset }, signal);
       all.push(...page);
       if (page.length < pageSize) break;
       offset += page.length;
@@ -116,6 +131,7 @@ export default function VisualizerPage() {
   async function calculateOptimalClassThresholds(
     jobId: string,
     allRecords: EmbeddingRecordDTO[],
+    signal: AbortSignal,
   ): Promise<void> {
     const classIds = [...new Set(
       allRecords
@@ -124,10 +140,13 @@ export default function VisualizerPage() {
     )];
     const results = await Promise.all(
       classIds.map(async (classId) => {
-        const optimal = await getJobOptimalThreshold(jobId, "f1", 120, classId);
+        const optimal = await getJobOptimalThreshold(jobId, "f1", 120, classId, signal);
         return [classId, optimal.threshold] as const;
       }),
     );
+
+    if (signal.aborted) return;
+
     const nextThresholds = Object.fromEntries(results);
     setClassThresholds(nextThresholds);
     setFilters((current) => ({
@@ -210,7 +229,7 @@ export default function VisualizerPage() {
   // Panel definitions for the multi-panel layout
   const panelDefinitions = useMemo((): PanelDefinition[] => {
     if (!config) return [];
-    
+
     const defs: PanelDefinition[] = [
       {
         id: "gallery",
@@ -233,7 +252,7 @@ export default function VisualizerPage() {
             onSearchStarted={(searchId) => {
               setActiveSearchId(searchId);
               // Forzar apertura del panel cuando se inicia una búsqueda
-              setActivePanelIds((prev) => 
+              setActivePanelIds((prev) =>
                 prev.includes("semantic-search") ? prev : [...prev, "semantic-search"]
               );
             }}
