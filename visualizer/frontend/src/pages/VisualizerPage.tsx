@@ -193,10 +193,10 @@ export default function VisualizerPage() {
   }
 
   const filteredRecords = useMemo(() => {
-    const base = applyFilters(records, filters);
+    const base = applyFilters(records, filters, confMode);
     if (!clusterSelection) return base;
     return base.filter((r) => clusterSelection.has(r.id));
-  }, [records, filters, clusterSelection]);
+  }, [records, filters, confMode, clusterSelection]);
 
   const filteredRecordIds = useMemo(
     () => filteredRecords.map((record) => record.id),
@@ -211,7 +211,7 @@ export default function VisualizerPage() {
         filters.perClassConfidence.get(numericClassId) ?? filters.minConfidence;
     }
     return thresholds;
-  }, [config?.categories, filters.minConfidence, filters.perClassConfidence]);
+  }, [config?.categories, filters.minConfidence, confMode, filters.perClassConfidence]);
 
   const gallerySplitFilter = useMemo(() => {
     if (filters.visibleSplits.size === 1) return Array.from(filters.visibleSplits)[0];
