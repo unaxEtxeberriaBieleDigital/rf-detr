@@ -16,15 +16,15 @@ const Plot = createPlotlyComponent(Plotly);
 const STATUS_SYMBOL_2D: Record<string, string> = {
   tp: "circle",
   fp: "x",
-  fn: "diamond",
-  misclassified: "square",
+  fn: "x",
+  misclassified: "x",
 };
 
 const STATUS_SYMBOL_3D: Record<string, string> = {
   tp: "circle",
   fp: "x",
-  fn: "diamond",
-  misclassified: "square",
+  fn: "x",
+  misclassified: "x",
 };
 
 interface EmbeddingPlotProps {
@@ -340,8 +340,22 @@ export default function EmbeddingPlot({
             useResizeHandler
             config={{
               displaylogo: false,
+              scrollZoom: true,
               responsive: true,
               modeBarButtonsToAdd: ["lasso2d"] as unknown as Plotly.ModeBarDefaultButtons[],
+              modeBarButtonsToRemove: [
+                "zoom2d",
+                "zoom3d",
+                "select2d",
+                "zoomIn2d",
+                "zoomOut2d",
+                "autoScale2d",
+                "toggleSpikelines",
+                "hoverClosestCartesian",
+                "hoverCompareCartesian",
+                "toImage",
+                "resetCameraLastSave3d",
+              ]
             }}
             onClick={(event) => {
               const point = event.points?.[0];
