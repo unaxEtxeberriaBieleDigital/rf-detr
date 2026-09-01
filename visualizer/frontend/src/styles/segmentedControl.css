@@ -25,6 +25,10 @@
   color: #000;
 }
 
+.seg-ctrl__btn--active:hover {
+  background: #aeaeae !important;
+}
+
 .seg-ctrl__btn:not(.seg-ctrl__btn--active):hover:not(:disabled) {
   background: #1a1a1a;
   color: var(--text-secondary);
