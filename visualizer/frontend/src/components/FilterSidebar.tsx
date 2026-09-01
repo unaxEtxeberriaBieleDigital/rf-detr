@@ -307,7 +307,6 @@ export default function FilterSidebar({
 
   function resetAll() {
     onChange(defaultFilterState());
-    onConfModeChange("global");
   }
 
   // ---- Render ----------------------------------------------------------
