@@ -298,12 +298,13 @@ export default function FilterSidebar({
   }
 
   const activeFilterCount =
-    (filters.searchQuery.trim() !== "" ? 1 : 0) +
+    Number(filters.searchQuery.trim() !== "") +
     filters.qualities.size +
     filters.visibleClasses.size +
     filters.visibleSplits.size +
-    (filters.minConfidence > 0 ? 1 : 0) +
-    filters.perClassConfidence.size;
+    (confMode === "global"
+      ? Number(filters.minConfidence > 0)
+      : filters.perClassConfidence.size);
 
   function resetAll() {
     onChange(defaultFilterState());
