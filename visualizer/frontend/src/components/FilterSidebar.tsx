@@ -54,7 +54,10 @@ export function defaultFilterState(): FilterState {
 
 /** Returns the confidence threshold that applies to *classId* (per-class override, or the
  *  global minimum confidence when there's no override). */
-function getConfidenceThreshold(classId: number | null, filters: FilterState): number {
+function getConfidenceThreshold(classId: number | null, filters: FilterState, confMode: "global" | "perclass"): number {
+  if (confMode === "global") {
+    return filters.minConfidence;
+  }
   const perClass = classId !== null ? filters.perClassConfidence.get(classId) : undefined;
   return perClass !== undefined ? perClass : filters.minConfidence;
 }
@@ -68,12 +71,12 @@ function getConfidenceThreshold(classId: number | null, filters: FilterState): n
  *  claimed becomes a miss ("fn"), while a plain false positive (no ground truth) simply
  *  disappears -- it doesn't count as anything.
  */
-function getEffectiveStatus(r: EmbeddingRecordDTO, filters: FilterState): PredQuality | null {
+function getEffectiveStatus(r: EmbeddingRecordDTO, filters: FilterState, confMode: "global" | "perclass"): PredQuality | null {
   if (!r.prediction) {
     return r.status as PredQuality;
   }
   const classId = r.ground_truth?.class_id ?? r.prediction.class_id ?? null;
-  const threshold = getConfidenceThreshold(classId, filters);
+  const threshold = getConfidenceThreshold(classId, filters, confMode);
   if (r.prediction.confidence >= threshold) {
     return r.status as PredQuality;
   }
@@ -84,6 +87,7 @@ function getEffectiveStatus(r: EmbeddingRecordDTO, filters: FilterState): PredQu
 export function applyFilters(
   records: EmbeddingRecordDTO[],
   filters: FilterState,
+  confMode: "global" | "perclass",
 ): EmbeddingRecordDTO[] {
   const query = filters.searchQuery.trim().toLowerCase();
 
@@ -114,7 +118,7 @@ export function applyFilters(
 
     // Confidence filter
     if (r.prediction) {
-      const threshold = getConfidenceThreshold(classId, filters);
+      const threshold = getConfidenceThreshold(classId, filters, confMode);
       if (r.prediction.confidence < threshold) return false;
     }
 
@@ -131,6 +135,8 @@ interface FilterSidebarProps {
   categories: Record<number, string>;
   filters: FilterState;
   onChange: (next: FilterState) => void;
+  confMode: "global" | "perclass";
+  onConfModeChange: (mode: "global" | "perclass") => void;
   setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
@@ -193,9 +199,10 @@ export default function FilterSidebar({
   categories,
   filters,
   onChange,
+  confMode,
+  onConfModeChange,
   setSidebarOpen,
 }: FilterSidebarProps) {
-  const [confMode, setConfMode] = useState<"global" | "perclass">("global");
 
   // Derived collections
   const availableSplits = useMemo(
@@ -245,11 +252,11 @@ export default function FilterSidebar({
         continue;
       }
 
-      const effectiveStatus = getEffectiveStatus(r, filters);
+      const effectiveStatus = getEffectiveStatus(r, filters, confMode);
       if (effectiveStatus && effectiveStatus in counts) counts[effectiveStatus]++;
     }
     return counts;
-  }, [records, filters]);
+  }, [records, filters, confMode]);
 
   // ---- Handlers --------------------------------------------------------
 
@@ -300,6 +307,7 @@ export default function FilterSidebar({
 
   function resetAll() {
     onChange(defaultFilterState());
+    onConfModeChange("global");
   }
 
   // ---- Render ----------------------------------------------------------
@@ -337,7 +345,7 @@ export default function FilterSidebar({
             value={filters.searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
-          <X/>
+          <X />
         </div>
       </Section>
 
@@ -372,7 +380,7 @@ export default function FilterSidebar({
               { value: "perclass", label: "Por clase" },
             ]}
             value={confMode}
-            onChange={setConfMode}
+            onChange={onConfModeChange}
           />
         </div>
 
