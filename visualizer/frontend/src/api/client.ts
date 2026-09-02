@@ -24,6 +24,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/**
+ * Check whether the backend is already accepting requests.
+ *
+ * The packaged backend needs several seconds to import torch and the model
+ * registry before uvicorn starts serving, so the frontend polls this endpoint
+ * before showing the setup form.
+ *
+ * @param timeoutMs Maximum time to wait for a single health probe.
+ * @returns True when the backend answered the health endpoint successfully.
+ */
+export async function checkBackendHealth(timeoutMs = 2000): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export function getModelTypes(): Promise<string[]> {
   return request<string[]>("/api/v1/model-types");
 }

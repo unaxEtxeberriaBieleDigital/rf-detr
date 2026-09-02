@@ -7,13 +7,14 @@ import "./styles/embeddingsPlot.css";
 import "./styles/imageGallery.css";
 import "./styles/semanticSearch.css";
 import { useAppConfig } from "./context/AppContext";
+import BackendGate from "./components/BackendGate";
 import SetupPage from "./pages/SetupPage";
 import VisualizerPage from "./pages/VisualizerPage";
 
 function App() {
   const { config } = useAppConfig();
 
-  return config ? <VisualizerPage /> : <SetupPage />;
+  return <BackendGate>{config ? <VisualizerPage /> : <SetupPage />}</BackendGate>;
 }
 
 export default App;
