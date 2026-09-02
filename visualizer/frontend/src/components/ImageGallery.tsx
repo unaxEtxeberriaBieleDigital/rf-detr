@@ -195,6 +195,18 @@ export default function ImageGallery({
         )}
         <div ref={sentinelRef} className="image-gallery-sentinel" />
         {loadingMore && <p className="image-gallery-loading">Cargando más imágenes...</p>}
+        <div className="image-gallery-footer">
+          <div className="image-gallery-footer-content">
+            <span>
+              Mostrando <strong>{visibleEntries.length}</strong>
+            </span>
+            <span>
+              Total <strong>{imagePaths.length}</strong>
+            </span>
+          </div>
+        </div>
+
+        <div ref={sentinelRef} className="image-gallery-sentinel" />
       </div>
       <ImageViewerModal
         isOpen={!!openImagePath}
