@@ -25,7 +25,7 @@ Start-Job -ScriptBlock {
 Start-Job -ScriptBlock {
     param($RootDir)
 
-    Set-Location (Join-Path $RootDir "frontend")
+    Set-Location (Join-Path $RootDir "visualizer\frontend")
 
     npm run tauri dev
 } -ArgumentList $RootDir

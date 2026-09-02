@@ -11,9 +11,8 @@ import type {
   SemanticSearchStatusResponse,
 } from "../types";
 
-// The FastAPI backend is started separately (see visualizer/run_visualizer.*) and listens
-// on port 8000 by default. CORS is open on the backend, so this works from both the Vite
-// dev server and the packaged Tauri webview.
+// During development the FastAPI backend is started separately (see visualizer/run_visualizer.*).
+// Production Tauri builds start the packaged backend on this loopback-only endpoint.
 export const API_BASE_URL = "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -95,6 +95,39 @@ npm run dev
 # En el navegador el selector de archivos no te va a funcionar y tendrás que meter las rutas a mano
 ```
 
+### Empaquetado para distribución
+
+Todo lo anterior es para desarrollar. Cuando quieras entregar la aplicación a alguien que no va a tocar el código (ni tiene Python, ni Node, ni Rust), usa:
+
+```powershell
+# Desde la raíz del proyecto
+.\visualizer\build_visualizer.ps1
+
+# Si sólo has tocado el frontend o el shell de Rust, reutiliza el backend ya congelado
+# (te ahorra varios minutos de PyInstaller)
+.\visualizer\build_visualizer.ps1 -SkipBackend
+```
+
+El resultado es una **carpeta portable** en `visualizer\dist\DataCleaner\`:
+
+```
+DataCleaner\
+├─ DataCleaner.exe     <- la app; el frontend React va minificado dentro
+└─ backend\            <- el backend congelado con PyInstaller
+   ├─ visualizer-backend.exe
+   └─ _internal\       <- Python, torch, CUDA, etc.
+```
+
+Se distribuye copiando la carpeta entera y se lanza con `DataCleaner.exe`. No hace falta instalar nada.
+
+Cosas que conviene que sepas:
+
+- **No se distribuye código fuente.** El backend viaja como *bytecode* dentro del ejecutable (no hay ningún `.py` tuyo en la carpeta) y del frontend sólo va el bundle minificado, sin `.ts` ni *sourcemaps*. Los `.py` que verás dentro de `_internal` son de librerías públicas (torch, transformers, rfdetr...) que necesitan su fuente en tiempo de ejecución.
+- **El backend lo arranca la propia app** en `127.0.0.1:8000` y lo mata al cerrar la ventana. Por eso no hay que lanzarlo a mano, y por eso si ya tienes un backend de desarrollo ocupando el puerto 8000 la versión empaquetada fallará.
+- **No se generan instaladores** (`.msi`/`.exe`). El payload de PyTorch con CUDA es de varios GB y revienta los límites prácticos de WiX y NSIS, así que el script usa `tauri build --no-bundle` y monta la carpeta portable a mano.
+- **Tamaño: ~4,5 GB**, casi todo PyTorch + CUDA. El script elimina automáticamente unos 2,8 GB de DLLs de CUDA que PyInstaller duplica (las copia junto al ejecutable *y* dentro de `torch\lib`; sólo se cargan las de `torch\lib`, porque torch registra ese directorio con `os.add_dll_directory()` antes de importar sus extensiones). Si algún día quitas ese paso, la carpeta se te va a 7,3 GB sin ganar nada.
+- Si necesitas que el backend funcione en un equipo **sin GPU NVIDIA**, se puede reducir mucho más congelándolo con el `torch` de CPU, pero entonces pierdes la inferencia acelerada.
+
 ## 1. Conceptos de IA que necesitas saber
 
 ### Modelo
