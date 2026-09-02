@@ -16,7 +16,6 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-app);
-  border-right: 0px solid transparent;
   overflow: hidden;
   transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1), border-right-color 0.35s;
   z-index: 10;
@@ -24,7 +23,7 @@
 
 .visualizer-sidebar--open {
   width: 300px;
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid transparent;
 }
 
 /* Toggle button — hamburger en el header, siempre visible */
@@ -73,7 +72,7 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  gap: 0.5rem;
+  gap: 0rem;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -83,7 +82,7 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
-  padding: 1rem 1rem 0rem 1rem;
+  padding: 10px 10px 0px 10px;
   flex-shrink: 0;
 }
 
@@ -122,6 +121,7 @@
   flex: 1;
   min-height: 0;
   position: relative;
+  padding: 10px;
 }
 
 .visualizer-plot {
@@ -157,7 +157,6 @@
 
 .fsb-top-bar {
   padding: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .fsb-logo {

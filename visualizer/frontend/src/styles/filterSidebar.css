@@ -6,6 +6,7 @@
   flex-direction: column;
   background: transparent;
   font-size: 0.84rem;
+  padding: 1px;
 }
 
 .fsb-header {
@@ -13,7 +14,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.65rem 0.85rem 0.5rem;
-  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -35,10 +35,6 @@
   text-decoration: underline;
 }
 
-.fsb-section {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .fsb-section-header {
   width: 100%;
   display: flex;
@@ -46,7 +42,7 @@
   align-items: center;
   padding: 0.85rem;
   background: transparent;
-  border: none;
+  border: 1px solid  var(--bg-hover, rgba(0, 0, 0, 0.04));
   cursor: pointer;
   font-weight: 600;
   font-size: 0.85rem;
@@ -136,6 +132,10 @@
   font-weight: 600;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.fsb-pill:hover {
+  background-color: #fff;
 }
 
 .fsb-pill-active {
@@ -241,7 +241,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  max-height: 240px;
+  /* max-height: 240px; */
   overflow-y: auto;
   padding-right: 2px;
 }

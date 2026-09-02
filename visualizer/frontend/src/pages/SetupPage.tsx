@@ -5,6 +5,7 @@ import { useAppConfig } from "../context/AppContext";
 import type { CheckDatasetResponse } from "../types";
 import Beams from "../components/DefaultBackground";
 import ParticleText from "../components/ParticleText";
+import { EtaEstimator, formatDuration } from "../utils/eta";
 import bieleLogo from "../assets/logos/biele-logo.png"
 
 const POLL_INTERVAL_MS = 1000;
@@ -34,6 +35,7 @@ export default function SetupPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [progressFraction, setProgressFraction] = useState<number | null>(null);
+  const [etaMessage, setEtaMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getDatasetTypes()
@@ -134,6 +136,8 @@ export default function SetupPage() {
     setSubmitting(true);
     setErrorMessage(null);
     setProgressFraction(null);
+    setEtaMessage(null);
+    const etaEstimator = new EtaEstimator();
 
     try {
       // --- Load existing DB (skip inference) ---
@@ -171,15 +175,25 @@ export default function SetupPage() {
         if (latest.status === "pending") {
           setStatusMessage("Esperando a que empiece el trabajo...");
           setProgressFraction(null);
+          setEtaMessage(null);
         } else if (latest.num_images_total > 0) {
           setStatusMessage(
             `Calculando embeddings y predicciones: ${latest.num_images_processed}/${latest.num_images_total} imágenes ` +
             `(${latest.num_records} registros)`,
           );
           setProgressFraction(latest.num_images_processed / latest.num_images_total);
+          const remainingSeconds = etaEstimator.update(latest.num_images_processed, latest.num_images_total);
+          setEtaMessage(
+            remainingSeconds == null
+              ? "Estimando el tiempo restante..."
+              : remainingSeconds === 0
+                ? "Finalizando..."
+                : `Tiempo restante estimado: ${formatDuration(remainingSeconds)}`,
+          );
         } else {
           setStatusMessage(`Calculando embeddings y predicciones... (${latest.num_records} registros)`);
           setProgressFraction(null);
+          setEtaMessage(null);
         }
         await sleep(POLL_INTERVAL_MS);
         latest = await getJob(job.id);
@@ -204,6 +218,7 @@ export default function SetupPage() {
       setSubmitting(false);
       setStatusMessage(null);
       setProgressFraction(null);
+      setEtaMessage(null);
     }
   }
 
@@ -370,6 +385,7 @@ export default function SetupPage() {
             <div className="progress-bar" role="progressbar" aria-valuenow={Math.round(progressFraction * 100)}>
               <div className="progress-bar-fill" style={{ width: `${Math.min(progressFraction, 1) * 100}%` }} />
             </div>
+            {etaMessage && <p className="setup-eta">{etaMessage}</p>}
           </>
         )}
 

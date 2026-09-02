@@ -5,6 +5,8 @@
   width: 100%;
   background-color: var(--bg-secondary, #0f0f0f);
   position: relative;
+  border: 1px solid rgb(255, 255, 255);
+  border-radius: 10px;
 }
 
 .panels-container {
@@ -49,8 +51,7 @@
   width: fit-content;
   max-width: 100%;
   border-radius: 4px;
-  background-color: var(--tab-bg, #2a2a2a);
-  padding: 2px 2px 2px 10px;
+  background-color: transparent;
 }
 
 .panel-title {
