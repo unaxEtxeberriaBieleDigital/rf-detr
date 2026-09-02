@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export interface PanZoomHandle {
   reset: () => void;
@@ -16,6 +16,8 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const isAutoFittingRef = useRef(true);
   const dragRef = useRef({
     active: false,
     pointerId: -1,
@@ -29,15 +31,45 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  function reset(): void {
+  const fitToViewport = useCallback((): void => {
+    const viewport = viewportRef.current;
+    const content = stageRef.current?.firstElementChild as HTMLElement | null;
+    if (!viewport || !content || content.offsetWidth === 0 || content.offsetHeight === 0) return;
+
+    const scale = Math.min(
+      viewport.clientWidth / content.offsetWidth,
+      viewport.clientHeight / content.offsetHeight,
+    );
+    setScale(scale);
+    setOffset({
+      x: (viewport.clientWidth - content.offsetWidth * scale) / 2,
+      y: (viewport.clientHeight - content.offsetHeight * scale) / 2,
+    });
+  }, []);
+
+  const reset = useCallback((): void => {
+    isAutoFittingRef.current = true;
     setScale(1);
     setOffset({ x: 0, y: 0 });
-  }
+    requestAnimationFrame(fitToViewport);
+  }, [fitToViewport]);
 
   useImperativeHandle(ref, () => ({ reset }));
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => reset(), [resetKey]);
+  useEffect(() => reset(), [reset, resetKey]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const content = stageRef.current?.firstElementChild;
+    if (!viewport || !content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (isAutoFittingRef.current) fitToViewport();
+    });
+    observer.observe(viewport);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [fitToViewport]);
 
   function clampScale(value: number): number {
     return Math.min(8, Math.max(0.5, value));
@@ -59,6 +91,7 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
         const nextScale = clampScale(scale * zoomFactor);
         if (nextScale === scale) return;
 
+        isAutoFittingRef.current = false;
         const worldX = (pointerX - offset.x) / scale;
         const worldY = (pointerY - offset.y) / scale;
         setOffset({
@@ -69,6 +102,7 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
       }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
+        isAutoFittingRef.current = false;
         const target = event.currentTarget;
         dragRef.current = {
           active: true,
@@ -104,6 +138,7 @@ const PanZoomViewport = forwardRef<PanZoomHandle, PanZoomViewportProps>(function
       }}
     >
       <div
+        ref={stageRef}
         className="image-viewer-stage"
         style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
       >

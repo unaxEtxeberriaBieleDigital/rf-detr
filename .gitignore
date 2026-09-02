@@ -33,6 +33,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Visualizer packaged-backend and installer build outputs
+visualizer/build/
+visualizer/frontend/src-tauri/resources/visualizer-backend/*
+!visualizer/frontend/src-tauri/resources/visualizer-backend/.gitkeep
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
