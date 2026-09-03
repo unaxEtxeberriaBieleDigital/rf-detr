@@ -66,11 +66,11 @@ export default function BackendGate({ children }: { children: ReactNode }) {
           <div className="backend-gate-center">
             <img src={bieleLogo} alt="Biele" className="beams-logo" />
             <div className="loader" />
-            <p className="backend-gate-title">Iniciando la aplicación...</p>
+            <p className="backend-gate-title">Starting application...</p>
             <p className="backend-gate-subtitle">
               {isSlow
-                ? `Preparando el modelo y las dependencias. Sigue arrancando (${Math.round(waitedMs / 1000)} s).`
-                : "Preparando el modelo y las dependencias. Esto puede tardar unos segundos."}
+                ? `Preparing the model and the dependencies. Still starting up (${Math.round(waitedMs / 1000)} s).`
+                : "Preparing the model and the dependencies. This might take a few seconds."}
             </p>
           </div>
         }
