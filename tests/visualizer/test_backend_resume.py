@@ -20,7 +20,7 @@ from visualizer.backend.jobs import JOB_STORE, Job, run_job
 from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import MODEL_REGISTRY
-from visualizer.backend.store import DB_FILENAME, JobStore
+from visualizer.backend.dataset_inference_store import DB_FILENAME, DatasetInferenceCache
 from visualizer.backend import jobs as jobs_module
 
 
@@ -142,7 +142,7 @@ def _default_request(dataset_path: Path, model_path: Path, **overrides: object) 
 def test_store_persist_batch_tracks_zero_record_images_and_reset_cleans_progress(
     tmp_path: Path,
 ) -> None:
-    store = JobStore(tmp_path)
+    store = DatasetInferenceCache(tmp_path)
     store.create_tables()
 
     zero_record_image = str(tmp_path / "valid" / "empty.jpg")
@@ -166,7 +166,7 @@ def test_run_job_resume_skips_processed_images_and_preserves_counters(tmp_path: 
 
     dataset = COCODetectionDataset(tmp_path)
     model = FakeModel(model_path)
-    store = JobStore(tmp_path)
+    store = DatasetInferenceCache(tmp_path)
     store.create_tables()
     store.enable_progress_tracking()
     store.set_run_config(
@@ -199,7 +199,7 @@ def test_run_job_resume_skips_processed_images_and_preserves_counters(tmp_path: 
 def test_check_dataset_reports_resume_fields_for_new_and_legacy_dbs(tmp_path: Path) -> None:
     resumable_dir = tmp_path / "resumable"
     resumable_dir.mkdir()
-    resumable_store = JobStore(resumable_dir)
+    resumable_store = DatasetInferenceCache(resumable_dir)
     resumable_store.create_tables()
     resumable_store.enable_progress_tracking()
     resumable_store.set_run_config(
@@ -242,7 +242,7 @@ def test_create_job_resume_rejects_db_without_progress_support(tmp_path: Path) -
     model_path = tmp_path / "model.pth"
     model_path.touch()
 
-    store = JobStore(tmp_path)
+    store = DatasetInferenceCache(tmp_path)
     store.create_tables()
     store.set_meta("status", "error")
     store.set_meta("num_images_total", 1)
@@ -262,7 +262,7 @@ def test_create_job_resume_rejects_mismatched_persisted_run_config(tmp_path: Pat
     model_path = tmp_path / "model.pth"
     model_path.touch()
 
-    store = JobStore(tmp_path)
+    store = DatasetInferenceCache(tmp_path)
     store.create_tables()
     store.enable_progress_tracking()
     store.set_run_config(
@@ -293,7 +293,7 @@ def test_create_job_resume_reattaches_to_existing_active_job(tmp_path: Path) -> 
     model_path = tmp_path / "model.pth"
     model_path.touch()
 
-    store = JobStore(tmp_path)
+    store = DatasetInferenceCache(tmp_path)
     store.create_tables()
     store.enable_progress_tracking()
     store.set_run_config(

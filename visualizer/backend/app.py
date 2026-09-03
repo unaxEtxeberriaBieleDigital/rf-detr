@@ -50,7 +50,7 @@ from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANT
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
-from visualizer.backend.store import JobStore
+from visualizer.backend.dataset_inference_store import DatasetInferenceCache
 
 logger = get_logger()
 
@@ -250,10 +250,10 @@ def check_dataset(path: str) -> CheckDatasetResponse:
     Returns:
         :class:`CheckDatasetResponse` with ``has_db=True`` and summary if found.
     """
-    if not JobStore.db_exists(path):
+    if not DatasetInferenceCache.db_exists(path):
         return CheckDatasetResponse(has_db=False)
 
-    store = JobStore(path)
+    store = DatasetInferenceCache(path)
     status = store.get_meta("status")
     components = store.dimensionality_reduction_components()
     has_reduction = store.has_dimensionality_reduction()
@@ -313,13 +313,13 @@ def create_job(request: JobRequest) -> JobStatusResponse:
         logger.error(f"Could not initialise dataset for a new job: {e}", exc_info=True)
         raise HTTPException(400, f"Could not initialise dataset: {e}") from e
 
-    db_already_exists = JobStore.db_exists(request.dataset_path)
+    db_already_exists = DatasetInferenceCache.db_exists(request.dataset_path)
     if request.resume and not db_already_exists:
         raise HTTPException(
             409,
             "Resume was requested, but no existing visualizer DB was found for this dataset.",
         )
-    store = JobStore(request.dataset_path)
+    store = DatasetInferenceCache(request.dataset_path)
     store.create_tables()
     split_names = [split.name for split in splits]
     requested_run_config = _build_run_config(request, split_names)
@@ -443,13 +443,13 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     Returns:
         :class:`JobStatusResponse` reflecting the stored job state.
     """
-    if not JobStore.db_exists(request.dataset_path):
+    if not DatasetInferenceCache.db_exists(request.dataset_path):
         raise HTTPException(
             404,
             f"No existing DB found at '{request.dataset_path}'. Run inference first via POST /api/v1/jobs.",
         )
 
-    store = JobStore(request.dataset_path)
+    store = DatasetInferenceCache(request.dataset_path)
     status = store.get_meta("status") or "done"
     can_resume = _store_can_resume(store, status)
     error = store.get_meta("error")
@@ -914,7 +914,7 @@ def _num_images_remaining(num_images_total: int, num_images_processed: int) -> i
     return max(num_images_total - num_images_processed, 0)
 
 
-def _store_can_resume(store: JobStore, status: str | None) -> bool:
+def _store_can_resume(store: DatasetInferenceCache, status: str | None) -> bool:
     """Return True when *store* represents an interrupted resumable run."""
     return bool(status in {"pending", "running", "error"} and store.has_progress_tracking())
 
