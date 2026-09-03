@@ -2,9 +2,9 @@
 :root {
   color-scheme: dark;
 
-  --bg-app: #0b0d10;
+  --bg-app: #000000;
   --bg-surface: #202020;
-  --bg-surface-alt: #171b21;
+  --bg-surface-alt: #252525;
   --bg-elevated: #1a1a1a;
   --bg-hover: #515152;
   --bg-input: #202020;

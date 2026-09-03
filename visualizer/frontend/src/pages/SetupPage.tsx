@@ -86,7 +86,8 @@ export default function SetupPage() {
     modelPath.trim().length > 0 &&
     datasetType.length > 0 &&
     modelType.length > 0 &&
-    !submitting;
+    !submitting && 
+    !dbCheckLoading;
 
   async function pickDatasetDirectory(): Promise<void> {
     try {
@@ -376,7 +377,7 @@ export default function SetupPage() {
             </label>
 
             <button type="submit" disabled={!canSubmit}>
-              {submitting ? "Procesando..." : dbChoice === "load" ? "Cargar" : dbChoice === "resume" ? "Seguir" : "Visualizar"}
+              {submitting ? "Procesando..." : dbChoice === "load" ? "Load" : dbChoice === "resume" ? "Resume" : "Visualizar"}
             </button>
           </form>
         ) : (
