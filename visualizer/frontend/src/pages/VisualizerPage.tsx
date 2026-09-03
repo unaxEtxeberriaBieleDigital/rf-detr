@@ -386,7 +386,7 @@ export default function VisualizerPage() {
 
           <div className="visualizer-header-right">
             <button className="secondary" onClick={reset}>
-              New investigation
+              <strong>New investigation</strong>
             </button>
           </div>
         </header>
