@@ -171,7 +171,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className={`fsb-section ${open ? "fsb-section-open" : ""}`}>
+    <div className={`fsb-section ${open ? "open" : ""}`}>
       <button
         type="button"
         className="fsb-section-header"

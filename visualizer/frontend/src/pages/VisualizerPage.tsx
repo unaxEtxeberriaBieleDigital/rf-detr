@@ -376,7 +376,7 @@ export default function VisualizerPage() {
                 onClick={() => setSidebarOpen(true)}
               >
                 <Funnel size={18} />
-                Filtros
+                Filters
                 {activeFilterCount > 0 && (
                   <span className="filter-badge">{activeFilterCount}</span>
                 )}

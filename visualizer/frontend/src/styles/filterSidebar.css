@@ -42,13 +42,22 @@
   align-items: center;
   padding: 0.85rem;
   background: transparent;
-  border: 1px solid  var(--bg-hover, rgba(0, 0, 0, 0.04));
+  border: 1px transparent;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.85rem;
   color: var(--text-primary);
   text-align: left;
   transition: background-color 0.15s ease;
+}
+
+.fsb-section {
+  border-radius: 0%;
+  border-left: 4px solid var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.fsb-section.open {
+  border-left: 4px solid var(--accent, rgba(0, 0, 0, 0.04));
 }
 
 .fsb-section-header:hover {
@@ -186,9 +195,21 @@
 }
 
 .fsb-slider {
-  grid-column: 1 / -1;
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
-  accent-color: var(--accent);
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #7c7c7c, #1b1b1b);
+}
+
+.fsb-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(253, 253, 253);
+  cursor: pointer;
 }
 
 .fsb-conf-sub {
