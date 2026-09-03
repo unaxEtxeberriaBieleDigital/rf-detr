@@ -17,8 +17,8 @@ function sleep(ms: number): Promise<void> {
 export default function SetupPage() {
   const { setConfig } = useAppConfig();
 
-  const [datasetPath, setDatasetPath] = useState("");
-  const [modelPath, setModelPath] = useState("");
+  const [datasetPath, setDatasetPath] = useState("C:\\training_dataset");
+  const [modelPath, setModelPath] = useState("E:\\rf-detr_training\\trainings\\frontal1_large.pth");
   const [datasetTypes, setDatasetTypes] = useState<string[]>([]);
   const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [datasetType, setDatasetType] = useState("");
@@ -223,6 +223,10 @@ export default function SetupPage() {
     }
   }
 
+  useEffect(() => {
+    void handleDatasetPathCommit(datasetPath);
+  }, []);
+
   return (
     <div className="setup-page">
       <Beams
@@ -258,8 +262,7 @@ export default function SetupPage() {
           />
         </h1>
         <p className="setup-subtitle">
-          Introduce el dataset y el modelo que quieres investigar. Se calcularán los embeddings y las predicciones
-          antes de pasar a la visualización.
+          Introduce the dataset and the model that you want to investigate. Embeddings will be compuetd before going to the visualization page.
         </p>
 
         {progressFraction == null ? (
@@ -275,7 +278,7 @@ export default function SetupPage() {
                   onBlur={(e) => handleDatasetPathCommit(e.currentTarget.value)}
                   disabled={submitting}
                 />
-                <button type="button" onClick={pickDatasetDirectory} disabled={submitting}>
+                <button type="button" onClick={pickDatasetDirectory} disabled={submitting} >
                   Seleccionar carpeta
                 </button>
               </div>
@@ -283,21 +286,21 @@ export default function SetupPage() {
 
             {/* DB detection banner */}
             {dbCheckLoading && (
-              <p className="setup-db-checking">Comprobando base de datos existente...</p>
+              <p className="setup-db-checking">Checking existing database...</p>
             )}
             {dbCheck?.has_db && !dbCheckLoading && (
               <div className="setup-db-banner">
                 <p className="setup-db-found">
-                  <strong>Base de datos existente encontrada</strong>
+                  <strong>Existing data base found</strong>
                   {" — "}
-                  {dbCheck.num_records.toLocaleString()} registros
+                  {dbCheck.num_records.toLocaleString()} registers
                   {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
-                    ? `, reducción ${dbCheck.dimensionality_reduction_components}D calculada`
-                    : ", sin reducción calculada"}
+                    ? `, reducción components ${dbCheck.dimensionality_reduction_components}`
+                    : ", without computed reduction"}
                   {dbCheck.can_resume && (
                     <span className="setup-db-warn">
                       {" "}
-                      (inferencia interrumpida: quedan {dbCheck.num_images_remaining.toLocaleString()} imágenes)
+                      (Interrupted inference: {dbCheck.num_images_remaining.toLocaleString()} images left)
                     </span>
                   )}
                 </p>
@@ -308,7 +311,7 @@ export default function SetupPage() {
                     onClick={() => setDbChoice("load")}
                     disabled={submitting || dbCheck.can_resume}
                   >
-                    Cargar existente
+                    Load existing
                   </button>
                   {dbCheck.can_resume && (
                     <button
@@ -317,7 +320,7 @@ export default function SetupPage() {
                       onClick={() => setDbChoice("resume")}
                       disabled={submitting}
                     >
-                      Seguir
+                      Keep up with inferences
                     </button>
                   )}
                   <button
@@ -326,7 +329,7 @@ export default function SetupPage() {
                     onClick={() => setDbChoice("recalculate")}
                     disabled={submitting}
                   >
-                    Recalcular (sobreescribir)
+                    Recalculate & override
                   </button>
                 </div>
               </div>

@@ -198,7 +198,7 @@ export default function ImageGallery({
         <div className="image-gallery-footer">
           <div className="image-gallery-footer-content">
             <span>
-              Mostrando <strong>{visibleEntries.length}</strong>
+              Showing <strong>{visibleEntries.length}</strong>
             </span>
             <span>
               Total <strong>{imagePaths.length}</strong>

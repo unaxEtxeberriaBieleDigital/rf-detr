@@ -235,7 +235,7 @@ export default function VisualizerPage() {
     const defs: PanelDefinition[] = [
       {
         id: "gallery",
-        title: "Galería de Imágenes",
+        title: "Image gallery",
         component: () => (
           <ImageGallery
             jobId={config.jobId}
@@ -263,7 +263,7 @@ export default function VisualizerPage() {
       },
       {
         id: "embedding",
-        title: "Gráfico de Embeddings",
+        title: "Embedding plot",
         component: () => (
           <EmbeddingPlot
             records={plotRecords}
@@ -287,7 +287,7 @@ export default function VisualizerPage() {
       },
       {
         id: "evaluation",
-        title: "Evaluación del Modelo",
+        title: "Model evaluation",
         component: () => (
           <EvaluationPanel
             jobId={config.jobId}
@@ -386,7 +386,7 @@ export default function VisualizerPage() {
 
           <div className="visualizer-header-right">
             <button className="secondary" onClick={reset}>
-              Nueva investigación
+              New investigation
             </button>
           </div>
         </header>

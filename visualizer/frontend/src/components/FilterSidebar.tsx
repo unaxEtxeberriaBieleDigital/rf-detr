@@ -330,13 +330,13 @@ export default function FilterSidebar({
         <span className="fsb-title">Filtros <Funnel size={18} /></span>
         {activeFilterCount > 0 && (
           <button type="button" className="fsb-reset" onClick={resetAll}>
-            Borrar filtros ({activeFilterCount})
+            Erase filters ({activeFilterCount})
           </button>
         )}
       </div>
 
       {/* ── Nombre  ── */}
-      <Section title="Nombre de imagen" icon={Search}>
+      <Section title="Image name" icon={Search}>
         <div className="fsb-search-row">
           <input
             type="text"
@@ -350,7 +350,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Prediction quality ── */}
-      <Section title="Calidad de predicción" icon={ChartPie}>
+      <Section title="Prediction quality" icon={ChartPie}>
         <div className="fsb-quality-pills">
           {ALL_QUALITIES.map((q) => {
             const active = filters.qualities.size === 0 || filters.qualities.has(q);
@@ -372,7 +372,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Confidence ── */}
-      <Section title="Confianza" icon={SlidersHorizontal}>
+      <Section title="Confidence" icon={SlidersHorizontal}>
         <div className="conf-type-selector">
           <SegmentedControl
             options={[
@@ -439,7 +439,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Classes ── */}
-      <Section title="Clases" icon={Tags}>
+      <Section title="Classes" icon={Tags}>
         <div className="fsb-class-list">
           {availableClasses.map((id) => {
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);

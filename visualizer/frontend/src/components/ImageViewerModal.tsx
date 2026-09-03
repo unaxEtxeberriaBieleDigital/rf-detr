@@ -220,7 +220,7 @@ export default function ImageViewerModal({
               checked={showGroundTruths}
               onChange={(e) => setShowGroundTruths(e.currentTarget.checked)}
             />
-            GT ({gtCount})
+            Ground Truth ({gtCount})
           </label>
           <label className="image-viewer-toggle">
             <input
@@ -228,7 +228,7 @@ export default function ImageViewerModal({
               checked={showPredictions}
               onChange={(e) => setShowPredictions(e.currentTarget.checked)}
             />
-            Pred ({predCount})
+            Prediction ({predCount})
           </label>
           {gtCount === 0 && (
             <span
@@ -246,7 +246,7 @@ export default function ImageViewerModal({
             Reset
           </button>
           <button type="button" className="image-viewer-btn" onClick={onClose}>
-            Cerrar
+            Close
           </button>
         </div>
 
@@ -285,14 +285,14 @@ export default function ImageViewerModal({
 
           <aside className="iv-sidebar">
             <div className="iv-sidebar-section">
-              <div className="iv-sidebar-title">Filtro interno</div>
+              <div className="iv-sidebar-title">Inner filter</div>
               <label className="iv-check-row">
                 <input
                   type="checkbox"
                   checked={useGlobalFilters}
                   onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
                 />
-                Usar filtros actuales ({minConfidence.toFixed(2)})
+                Use current filters ({minConfidence.toFixed(2)})
               </label>
               <div className="iv-conf-row">
                 <label htmlFor="iv-local-conf" className="iv-conf-label">
@@ -332,7 +332,7 @@ export default function ImageViewerModal({
             </div>
 
             <div className="iv-sidebar-section">
-              <div className="iv-sidebar-title">Defectos ({predCount})</div>
+              <div className="iv-sidebar-title">Predictions ({predCount})</div>
               {predCount === 0 && <p className="iv-empty">Sin predicciones por encima del umbral.</p>}
               <ul className="iv-list">
                 {defectRecords.map((r) => {

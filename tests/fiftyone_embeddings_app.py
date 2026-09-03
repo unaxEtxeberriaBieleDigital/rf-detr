@@ -45,7 +45,7 @@ CHECKPOINT = r"C:\Users\u.etxeberria\Downloads\lat1_large.pth"
 FIFTYONE_DATASET_NAME = "rfdetr-lat-embeddings"
 SPLITS = ("train", "valid", "test")
 CONFIDENCE_THRESHOLD = 0.5
-BATCH_SIZE = 4
+BATCH_SIZE = 16
 # Limit the number of images loaded per split while iterating on the workflow. Set to
 # `None` to process the full split once you're happy with the results.
 MAX_SAMPLES_PER_SPLIT: int | None = 30
