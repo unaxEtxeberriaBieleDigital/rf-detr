@@ -15,57 +15,17 @@ groups, running in a background thread) is source-agnostic and lives in ``engine
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
+from visualizer.backend.semantic_search.types import ScanUnit, SearchResultPreview
 
 if TYPE_CHECKING:
-    from visualizer.backend.semantic_search.engine import SearchResult
-
-
-@dataclass
-class SearchResultPreview:
-    """An in-memory preview rendered for one :class:`~visualizer.backend.semantic_search.engine.SearchResult`.
-
-    Attributes:
-        content: Raw preview image bytes (e.g. JPEG/PNG-encoded), ready to be served as-is
-            or embedded as a base64 data URL. Never written to disk.
-        media_type: The HTTP media type of ``content`` (e.g. ``"image/jpeg"``).
-        bbox: The detection's bounding box, in the *local* pixel coordinates of ``content``
-            (i.e. already translated/rescaled to match whatever crop or resize the source
-            applied), or ``None`` when the underlying detection has no bbox. Callers must
-            use this instead of the original ``SearchResult.prediction.bbox`` -- for sources
-            that crop/rescale (e.g. a tiled source), the two coordinate spaces differ.
-    """
-
-    content: bytes
-    media_type: str
-    bbox: tuple[float, float, float, float] | None
-
-
-@dataclass
-class ScanUnit:
-    """One inference-ready unit of work produced by a :class:`BaseSemanticSearchSource`.
-
-    Attributes:
-        id: Unique key identifying this unit in the on-disk cache (e.g. an image path, or
-            ``"image.tif::tile_3_7"`` for a tile of a larger image).
-        group_key: Key used to deduplicate results ("one result per X"). Several units may
-            share the same ``group_key`` (e.g. every tile of the same source image), in
-            which case only the single best-matching detection across all of them is kept.
-        inference_input: The value passed to :meth:`BaseModel.get_batch_embeddings` for
-            this unit -- typically a path, but may be an in-memory ``np.ndarray`` (e.g. a
-            tile extracted via windowed reads, never materialised to disk).
-    """
-
-    id: str
-    group_key: str
-    inference_input: str | Path | np.ndarray
+    from visualizer.backend.semantic_search.types import SearchResult
 
 
 class BaseSemanticSearchSource(ABC):

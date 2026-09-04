@@ -7,7 +7,7 @@
 import numpy as np
 from sklearn.metrics import auc, confusion_matrix, roc_curve
 
-from visualizer.backend.evaluator import Match
+from visualizer.backend.evaluation.types import Match
 from visualizer.backend.metrics.base_metrics import (
     MetricDefinition,
     MetricsCalculator,

@@ -30,7 +30,7 @@ import numpy as np
 from sklearn.decomposition import IncrementalPCA
 
 from rfdetr.utilities.logger import get_logger
-from visualizer.backend.embeddingrecord import EmbeddingRecord
+from visualizer.backend.inference.types import EmbeddingRecord
 
 logger = get_logger()
 

@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from visualizer.backend.datasets.basedataset import *
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import register_dataset
 from visualizer.backend.metrics import MetricsCalculator
 from visualizer.backend.metrics.coco_detection_metrics import COCODetectionMetricsCalculator

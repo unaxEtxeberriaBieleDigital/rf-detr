@@ -12,7 +12,7 @@ import torch
 from rfdetr.utilities.logger import get_logger
 from rfdetr.variants import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import register_model
 
 logger = get_logger()

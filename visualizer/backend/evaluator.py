@@ -4,32 +4,11 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-from dataclasses import dataclass
-
 import torch
 from torchvision.ops import box_iou
 
-from visualizer.backend.prediction import Prediction
-
-
-@dataclass
-class Match:
-    """One resolved (prediction, ground_truth) pairing for a single image.
-
-    Attributes:
-        prediction: The model's detection, or ``None`` for a false negative (a ground-truth
-            box that no prediction was matched to).
-        embedding: The query embedding backing ``prediction``, aligned 1:1 with it, or
-            ``None`` when ``prediction`` is ``None``.
-        ground_truth: The matched annotation, or ``None`` for a false positive.
-        status: ``"tp"`` (correct box + class), ``"misclassified"`` (correct box, wrong
-            class), ``"fp"`` (no matching ground truth), or ``"fn"`` (missed ground truth).
-    """
-
-    prediction: Prediction | None
-    embedding: list[float] | None
-    ground_truth: Prediction | None
-    status: str
+from visualizer.backend.evaluation.types import Match
+from visualizer.backend.shared_types.prediction import Prediction
 
 
 def match_detections(

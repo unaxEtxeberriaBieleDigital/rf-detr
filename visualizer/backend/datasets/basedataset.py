@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 
 from visualizer.backend.metrics.base_metrics import MetricsCalculator
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 
 SUPPORTED_ANNOTATIONS = """
 * COCO: only under the name of _annotations.coco.json

@@ -4,35 +4,17 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-from dataclasses import dataclass, field
 from pathlib import Path
 import threading
-from typing import Literal
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import BaseDataset, Split
-from visualizer.backend.embeddingrecord import EmbeddingRecord
 from visualizer.backend.evaluator import match_detections
-from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.dataset_inference_store import DatasetInferenceStore
+from visualizer.backend.inference.types import DatasetInferenceJobStatus, EmbeddingRecord
+from visualizer.backend.models.basemodel import BaseModel
 
 logger = get_logger()
-
-DatasetInferenceJobStatus = Literal["pending", "running", "done", "error"]
-
-
-@dataclass
-class DatasetInferenceJobStatus:
-    """State for one embedding-extraction-and-evaluation run, backed by a SQLite DB."""
-
-    id: str
-    store: DatasetInferenceStore
-    status: DatasetInferenceJobStatus = "pending"
-    error: str | None = None
-    categories: dict[int, str] = field(default_factory=dict)
-    num_images_total: int = 0
-    num_images_processed: int = 0
-
 
 # Maps dataset_inference_job_id -> Job.  The actual records live in the Job's SQLite DB, not in RAM.
 DATASET_INFERENCE_JOB_STORE: dict[str, DatasetInferenceJobStatus] = {}

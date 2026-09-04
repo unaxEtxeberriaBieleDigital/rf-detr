@@ -24,7 +24,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 
 CACHE_FILENAME = "rfdetr_semantic_search_cache.db"
 

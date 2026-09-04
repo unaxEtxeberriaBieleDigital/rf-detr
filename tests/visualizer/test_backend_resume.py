@@ -18,7 +18,7 @@ from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.datasets.cocodetectiondataset import COCODetectionDataset
 from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus, run_job
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import MODEL_REGISTRY
 from visualizer.backend.dataset_inference_store import DB_FILENAME, DatasetInferenceStore
 from visualizer.backend import jobs as jobs_module

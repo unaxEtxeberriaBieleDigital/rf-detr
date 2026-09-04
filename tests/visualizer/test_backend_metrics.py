@@ -11,9 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from visualizer.backend.app import app
-from visualizer.backend.embeddingrecord import EmbeddingRecord
+from visualizer.backend.inference.types import EmbeddingRecord
 from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.dataset_inference_store import DatasetInferenceStore
 
 

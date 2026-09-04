@@ -25,56 +25,20 @@ progressing even if no client is polling it, and the frontend can reattach to it
 """
 
 import heapq
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.prediction import Prediction
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.semantic_search.cache import SearchCache
+from visualizer.backend.semantic_search.types import SearchJob, SearchResult
 
 logger = get_logger()
 
-SearchStatus = Literal["pending", "running", "done", "error", "cancelled"]
-
 # Number of units sent to the model per inference call.
 _BATCH_SIZE = 8
-
-
-@dataclass
-class SearchResult:
-    """One nearest-neighbour hit: the best-matching detection within one result group."""
-
-    image_path: str
-    prediction: Prediction
-    distance: float
-    # The id of the ScanUnit this detection came from (e.g. a plain image path, or a tile
-    # id like "img.tif::tile_0_0_560_560"). Sources use this to re-render exactly the same
-    # unit that was fed to the model when producing a preview, instead of an arbitrary crop
-    # around the bbox -- see e.g. TiledImageSource.render_result_preview.
-    unit_id: str
-
-
-@dataclass
-class SearchJob:
-    """State for one semantic-search run, kept fully in memory."""
-
-    id: str
-    parent_job_id: str
-    query_record_id: str
-    query_image_path: str
-    search_path: str
-    k: int
-    source_type: str = "default"
-    status: SearchStatus = "pending"
-    error: str | None = None
-    num_images_total: int = 0
-    num_images_processed: int = 0
-    results: list[SearchResult] = field(default_factory=list)
 
 
 # Maps search_id -> SearchJob. Kept alongside visualizer.backend.jobs.JOB_STORE; a search

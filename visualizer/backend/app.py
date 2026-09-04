@@ -30,12 +30,27 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel as PydanticModel
-
 from rfdetr.utilities.logger import get_logger
+from visualizer.backend.api.schemas import (
+    CheckDatasetResponse,
+    DimensionalityReductionStatusResponse,
+    EvaluationMetricsResponse,
+    EvaluationRequest,
+    ImagePathPageResponse,
+    JobRequest,
+    JobStatusResponse,
+    LoadJobRequest,
+    MetricDefinitionResponse,
+    OptimalThresholdResponse,
+    RecordsByImagePathsRequest,
+    ReductionRequest,
+    SemanticSearchRequest,
+    SemanticSearchResultDTO,
+    SemanticSearchStatusResponse,
+)
 from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
-from visualizer.backend.evaluator import Match
+from visualizer.backend.evaluation.types import Match
 from visualizer.backend.dataset_inference_jobs import (
     DATASET_INFERENCE_JOB_STORE,
     DatasetInferenceJobStatus,
@@ -45,7 +60,7 @@ from visualizer.backend.dataset_inference_jobs import (
 )
 from visualizer.backend.metrics import get_metrics_for_dataset
 from visualizer.backend.models import rfdetr  # noqa: F401
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
@@ -62,134 +77,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ---------------------------------------------------------------------------
-# Pydantic models
-# ---------------------------------------------------------------------------
-
-
-class JobRequest(PydanticModel):
-    dataset_path: str
-    dataset_type: str
-    model_path: str
-    model_type: str
-    splits: list[str] | None = None
-    batch_size: int = 8
-    iou_threshold: float = 0.5
-    resume: bool = False
-
-
-class LoadJobRequest(PydanticModel):
-    dataset_path: str
-
-
-class JobStatusResponse(PydanticModel):
-    id: str
-    status: str
-    error: str | None = None
-    num_records: int = 0
-    categories: dict[int, str] = {}
-    num_images_total: int = 0
-    num_images_processed: int = 0
-    num_images_remaining: int = 0
-    can_resume: bool = False
-    has_dimensionality_reduction: bool = False
-    dimensionality_reduction_components: int | None = None
-
-
-class ImagePathPageResponse(PydanticModel):
-    image_paths: list[str]
-    total_images: int
-    offset: int
-    limit: int
-    has_more: bool
-
-
-class RecordsByImagePathsRequest(PydanticModel):
-    image_paths: list[str]
-    split: str | None = None
-
-
-class CheckDatasetResponse(PydanticModel):
-    has_db: bool
-    num_records: int = 0
-    has_dimensionality_reduction: bool = False
-    dimensionality_reduction_components: int | None = None
-    status: str | None = None
-    num_images_total: int = 0
-    num_images_processed: int = 0
-    num_images_remaining: int = 0
-    can_resume: bool = False
-
-
-class DimensionalityReductionStatusResponse(PydanticModel):
-    updated: int
-    components: int
-
-
-class MetricDefinitionResponse(PydanticModel):
-    name: str
-    display_name: str
-    description: str
-    metric_type: str
-
-
-class EvaluationMetricsResponse(PydanticModel):
-    dataset_type: str
-    metrics: dict[str, Any]
-    metric_definitions: list[MetricDefinitionResponse]
-    cached: bool
-    calculated_at: str | None = None
-    applied_class_thresholds: dict[int, float] | None = None
-    applied_record_ids: list[str] | None = None
-    applied_record_count: int | None = None
-
-
-class EvaluationRequest(PydanticModel):
-    class_thresholds: dict[int, float] | None = None
-    record_ids: list[str] | None = None
-
-
-class OptimalThresholdResponse(PydanticModel):
-    dataset_type: str
-    metric_name: str
-    class_id: int | None = None
-    threshold: float
-    metric_value: float
-    num_thresholds: int
-
-
-class SemanticSearchRequest(PydanticModel):
-    query_record_id: str
-    search_path: str
-    k: int = 20
-    model_path: str
-    model_type: str
-    source_type: str = "default"
-
-
-class SemanticSearchResultDTO(PydanticModel):
-    image_path: str
-    bbox: tuple[float, float, float, float] | None
-    confidence: float
-    class_id: int
-    distance: float
-    preview_data_url: str
-
-
-class SemanticSearchStatusResponse(PydanticModel):
-    id: str
-    parent_job_id: str
-    query_record_id: str
-    query_image_path: str
-    search_path: str
-    k: int
-    status: str
-    error: str | None = None
-    num_images_total: int = 0
-    num_images_processed: int = 0
-    results: list[SemanticSearchResultDTO] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -502,14 +389,6 @@ def get_job(job_id: str) -> JobStatusResponse:
 # ---------------------------------------------------------------------------
 # Dimensionality reduction (on-demand)
 # ---------------------------------------------------------------------------
-
-
-class ReductionRequest(PydanticModel):
-    record_ids: list[str] | None = None
-    algorithm: str = "pca"  # "pca" | "tsne" | "umap"
-    perplexity: float = 30.0
-    n_neighbors: int = 15
-    min_dist: float = 0.1
 
 
 @app.post(

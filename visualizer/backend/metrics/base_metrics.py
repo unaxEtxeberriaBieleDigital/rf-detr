@@ -5,37 +5,12 @@
 # ------------------------------------------------------------------------
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from visualizer.backend.metrics.types import MetricDefinition, MetricType
+
 if TYPE_CHECKING:
-    from visualizer.backend.evaluator import Match
-
-
-class MetricType(Enum):
-    """Categorizes how a metric should be rendered."""
-
-    SCALAR = "scalar"  # Single number: mAP, accuracy, etc.
-    CURVE = "curve"  # Line chart: x,y pairs (threshold vs mAP)
-    MATRIX = "matrix"  # 2D data: confusion matrix
-
-
-@dataclass
-class MetricDefinition:
-    """Describes a single metric that can be calculated.
-
-    Attributes:
-        name: Unique identifier (snake_case), used in API and storage.
-        display_name: Human-readable title shown in UI.
-        description: Long-form explanation for tooltips.
-        metric_type: How the metric should be visualized (scalar/curve/matrix).
-    """
-
-    name: str
-    display_name: str
-    description: str
-    metric_type: MetricType
+    from visualizer.backend.evaluation.types import Match
 
 
 # MetricValue can be:

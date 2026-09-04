@@ -11,11 +11,11 @@ Esta guía explica cómo funciona el backend del visualizador **sin asumir conoc
 2. [Qué hace este backend en una frase](#2-qué-hace-este-backend-en-una-frase)
 3. [Mapa del código](#3-mapa-del-código)
 4. [Cómo arranca todo — `app.py`](#4-cómo-arranca-todo--apppy)
-5. [Flujo principal: inferencia y evaluación — `jobs.py`](#5-flujo-principal-inferencia-y-evaluación--jobspy)
+5. [Flujo principal: inferencia y evaluación — `dataset_inference_jobs.py`](#5-flujo-principal-inferencia-y-evaluación--dataset_inference_jobspy)
 6. [El modelo — `models/`](#6-el-modelo--models)
 7. [El dataset — `datasets/`](#7-el-dataset--datasets)
 8. [Comparar predicciones con ground truth — `evaluator.py`](#8-comparar-predicciones-con-ground-truth--evaluatorpy)
-9. [Guardar resultados — `store.py`](#9-guardar-resultados--storepy)
+9. [Guardar resultados — `dataset_inference_store.py`](#9-guardar-resultados--dataset_inference_storepy)
 10. [Búsqueda semántica — `semantic_search/`](#10-búsqueda-semántica--semantic_search)
 11. [Tipos de datos compartidos](#11-tipos-de-datos-compartidos)
 12. [El registro — `registry.py`](#12-el-registro--registrypy)
@@ -146,7 +146,7 @@ Las redes neuronales están preparadas para recibir más de una imagen a la vez,
 
 El tensor es la unidad básica de operación de una red neuronal. Es un conjunto de números. Igual que un escalar (un único número), un vector (un conjunto de números de una sola dimensión) o una matriz (un conjunto de números de dos dimensiones), existe el tensor, que es la generalización de todo. Un tensor puede tener las dimensiones que quiera: 3 o más de tres, o incluso 2 o 1. 
 
-![Tensor](doc/tensor.jpg)
+![Tensor](assets/tensor.jpg)
 
 Las redes neuronales operan sobre tensores, así que si se quiere trabajar con una imagen de escala de grises (2 dimensiones) se usa un tensor 2D (el equivalente a una matriz). Si se trabaja con una imagen RGB se trabaja con un tensor 3D y si se trabaja con un video, con un tensor 4D. 
 
@@ -196,7 +196,7 @@ Sin embargo, nuestras imágenes son enormes (de 16K) por lo que reducirlo a $384
 ```
 En la siguiente imagen puedes ver como funciona. Simplemente haces inferencia en un trozo de la imagen. Vas trozo a trozo y así vas encontrando lo que quieres dentro de la imagen original, sin tener que reducir el tamaño de la imagen.
 
-![Tiling example](doc/tiling.gif)
+![Tiling example](assets/tiling.gif)
 
 ### TP, FP, FN
 Cuando se compara una predicción con el GT se clasifica como:
@@ -207,8 +207,8 @@ Cuando se compara una predicción con el GT se clasifica como:
 
 A veces te encontrarás con FN un poco extraños. Te pongo un ejemplo:
 
-<!-- ![FN extraño](doc/defect_cut.png) -->
-<img src="doc/defect_cut.png" alt="FN extraño" width="600">
+<!-- ![FN extraño](assets/defect_cut.png) -->
+<img src="assets/defect_cut.png" alt="FN extraño" width="600">
 
 Aquí parece que se han confundido etiquetando la imagen (hay una etiqueta arriba a la derecha), y que le han puesto etiqueta de defecto a algo que no era. Sin embargo la realidad es otra. Seguramente había un defecto en donde se corta la imagen (en la parte de arriba), pero al dividirlo en tiles, ha quedado una parte tan pequeña del defecto que no se puede ver. En estos casos no hay nada que hacer. Es algo para que lo tengas en cuenta si te parece raro, pero es inevitable.
 
@@ -217,8 +217,8 @@ Para saber si una predicción "encaja" con una caja de GT, se calcula el **solap
 
 Es la forma estándar para decidir si un GT y una predicción hacen "match", pero puede dar casos un poco curiosos:
 
-<!-- ![IoU curioso](doc/weird_fp_fn.png) -->
-<img src="doc/weird_fp_fn.png" alt="IoU curioso" width="600">
+<!-- ![IoU curioso](assets/weird_fp_fn.png) -->
+<img src="assets/weird_fp_fn.png" alt="IoU curioso" width="600">
 
 Aquí puedes ver que tenemos una detección pintada de rojo a la izquierda (que significa que es un FP). Esto se da porque, aunque a ti te parezca que las cajas solapan lo suficiente, probablemente el $IoU < 0.5$. El cliente probablemente consideraría esa detección como correcta, pero esta aplicación tiene que hacer match de forma automatizada de alguna manera usando IoU y a veces se dan casos como estos. En este caso tenemos un FP y un FN, porque el GT no tiene "match" (FN) y tenemos una predicción también sin "match" (FP). Es también un caso con el que te puedes encontrar y para que sepas por qué sucede, pero no te preocupes por eso.
 
@@ -289,14 +289,20 @@ visualizer/backend/
 ├── app.py                   ← Servidor HTTP (FastAPI). Define todos los endpoints.
 ├── registry.py              ← Registro global de modelos, datasets y fuentes de búsqueda.
 │
-├── jobs.py                  ← Lógica del "job" principal: inferencia + evaluación en background.
+├── dataset_inference_jobs.py ← Lógica del job principal en background.
 ├── evaluator.py             ← Compara predicciones con GT → produce TP/FP/FN/misclassified.
-├── store.py                 ← Leer/escribir resultados en SQLite. También ejecuta reducción de dimensionalidad.
+├── dataset_inference_store.py ← Resultados y metadatos persistentes en SQLite.
 │
-├── embeddingrecord.py       ← Estructura de datos: un registro por detección.
-├── prediction.py            ← Estructura de datos: bbox + confidence + class_id.
+├── api/
+│   └── schemas.py           ← Schemas Pydantic de requests y responses HTTP.
+├── shared_types/
+│   └── prediction.py        ← Tipo compartido: bbox + confidence + class_id.
+├── evaluation/
+│   └── types.py             ← Match: emparejamiento predicción ↔ ground truth.
+├── inference/
+│   └── types.py             ← Estado del job y registros de embeddings.
 │
-├── doc/
+├── assets/
 │   └── ...                  ← Imágenes para el README.md de la explicación del backend
 |
 ├── models/
@@ -341,7 +347,7 @@ Cuando el frontend lanza inferencia, el servidor devuelve inmediatamente un `202
 
 ---
 
-## 5. Flujo principal: inferencia y evaluación — `jobs.py`
+## 5. Flujo principal: inferencia y evaluación — `dataset_inference_jobs.py`
 
 El flujo que ejecuta `run_job()` es este:
 
@@ -432,7 +438,7 @@ El resultado es una lista de `Match`, cada uno con `(prediction, embedding, grou
 
 ---
 
-## 9. Guardar resultados — `store.py`
+## 9. Guardar resultados — `dataset_inference_store.py`
 
 `DatasetInferenceStore` envuelve un archivo SQLite (`rfdetr_visualizer.db`) en la raíz del dataset.
 
@@ -508,13 +514,13 @@ Las coordenadas de las detecciones se traducen automáticamente del espacio de l
 
 | Clase | Dónde | Qué representa |
 |-------|-------|----------------|
-| `Prediction` | `prediction.py` | Una detección: `class_id`, `confidence`, `bbox`. |
-| `EmbeddingRecord` | `embeddingrecord.py` | Un registro completo: imagen, split, embedding, predicción, GT y status (TP/FP…). |
-| `Match` | `evaluator.py` | El resultado del emparejamiento predicción↔GT para una sola detección. |
-| `ScanUnit` | `semantic_search/basesource.py` | Una unidad de trabajo para la búsqueda: id, group_key, lo que se le pasa al modelo. |
-| `SearchResult` | `semantic_search/engine.py` | Un resultado final: image_path, bbox, distancia al embedding de consulta. |
-| `Job` | `jobs.py` | Estado de un job de inferencia (en RAM, respaldado por SQLite). |
-| `SearchJob` | `semantic_search/engine.py` | Estado de un job de búsqueda semántica (solo en RAM). |
+| `Prediction` | `shared_types/prediction.py` | Una detección: `class_id`, `confidence`, `bbox`. |
+| `EmbeddingRecord` | `inference/types.py` | Un registro completo: imagen, split, embedding, predicción, GT y status (TP/FP…). |
+| `Match` | `evaluation/types.py` | El resultado del emparejamiento predicción↔GT para una sola detección. |
+| `ScanUnit` | `semantic_search/types.py` | Una unidad de trabajo para la búsqueda: id, group_key, lo que se le pasa al modelo. |
+| `SearchResult` | `semantic_search/types.py` | Un resultado final: image_path, bbox, distancia al embedding de consulta. |
+| `DatasetInferenceJobStatus` | `inference/types.py` | Estado de un job de inferencia (en RAM, respaldado por SQLite). |
+| `SearchJob` | `semantic_search/types.py` | Estado de un job de búsqueda semántica (solo en RAM). |
 
 ---
 
@@ -617,16 +623,16 @@ En vez de estar esperando a que termine del todo la búsqueda para ver los resul
 
 Si ves que algo es difícil de entender o es muy lento o lo que sea, algo que le pueda molestar al usuario, intenta corregirlo. Además, intenta mejorar la interfaz gráfica. Intenta hacerla más atractiva. Te dejo como inspiración del layout la siguiente imagen:
 
-![Inspiración layout](doc/inspiration1.gif)
+![Inspiración layout](assets/inspiration1.gif)
 
 Además, estaría bien que pudieras usar esto como el estilo principal de los colores, las formas y tal:
 
-<!-- ![Inspiracion estilo](doc/inspiration2.png) -->
-<img src="doc/inspiration2.png" alt="Inspiracion estilo" width="1200">
+<!-- ![Inspiracion estilo](assets/inspiration2.png) -->
+<img src="assets/inspiration2.png" alt="Inspiracion estilo" width="1200">
 
 O esto:
 
-<img src="doc/inspiration3.png" alt="Inspiracion estilo" width="1200">
+<img src="assets/inspiration3.png" alt="Inspiracion estilo" width="1200">
 
 Intenta, además, ponerle a la aplicación el icono de Biele, que está en `visualizer\frontend\src\assets\B-Bg.png`. Tanto en la parte de arriba a la izquierda de la aplicación, como el icono que aparece en la barra de tareas de Windows. 
 

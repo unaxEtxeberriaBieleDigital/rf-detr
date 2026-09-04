@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from visualizer.backend.prediction import Prediction
+from visualizer.backend.shared_types.prediction import Prediction
 
 
 class BaseModel(ABC):
