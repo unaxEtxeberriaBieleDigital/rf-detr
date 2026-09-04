@@ -12,12 +12,12 @@ Run with:
 Typical flow for the frontend:
     1. GET  /api/v1/model-types, /api/v1/dataset-types     -> discover what's available
     2. GET  /api/v1/check-dataset?path=…                   -> check for existing DB
-    3a. POST /api/v1/jobs                                   -> kick off inference + evaluation
-    3b. POST /api/v1/jobs/load                              -> load an existing DB (skip inference)
-    4. GET  /api/v1/jobs/{job_id}                           -> poll until status == "done"
-    5. GET  /api/v1/jobs/{job_id}/records?…                 -> fetch (filtered) embedding records
-    6. GET  /api/v1/jobs/{job_id}/images/{record_id}        -> fetch the underlying image
-    7. POST /api/v1/jobs/{job_id}/dimensionality_reduction?components=2 -> compute reduction on demand
+    3a. POST /api/v1/dataset_inference_jobs                                   -> kick off inference + evaluation
+    3b. POST /api/v1/dataset_inference_jobs/load                              -> load an existing DB (skip inference)
+    4. GET  /api/v1/dataset_inference_jobs/{job_id}                           -> poll until status == "done"
+    5. GET  /api/v1/dataset_inference_jobs/{job_id}/records?…                 -> fetch (filtered) embedding records
+    6. GET  /api/v1/dataset_inference_jobs/{job_id}/images/{record_id}        -> fetch the underlying image
+    7. POST /api/v1/dataset_inference_jobs/{job_id}/dimensionality_reduction?components=2 -> compute reduction on demand
 """
 
 import base64
@@ -36,12 +36,12 @@ from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.evaluator import Match
-from visualizer.backend.jobs import (
-    JOB_STORE,
-    Job,
-    release_active_job,
-    run_job,
-    try_register_active_job,
+from visualizer.backend.dataset_inference_jobs import (
+    DATASET_INFERENCE_JOB_STORE,
+    DatasetInferenceJobStatus,
+    release_active_dataset_inference_job,
+    run_dataset_inference_job,
+    try_register_active_dataset_inference_job,
 )
 from visualizer.backend.metrics import get_metrics_for_dataset
 from visualizer.backend.models import rfdetr  # noqa: F401
@@ -278,7 +278,7 @@ def check_dataset(path: str) -> CheckDatasetResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/v1/jobs", response_model=JobStatusResponse, status_code=202)
+@app.post("/api/v1/dataset_inference_jobs", response_model=JobStatusResponse, status_code=202)
 def create_job(request: JobRequest) -> JobStatusResponse:
     """Create and start a new inference job.
 
@@ -325,13 +325,13 @@ def create_job(request: JobRequest) -> JobStatusResponse:
     requested_run_config = _build_run_config(request, split_names)
     job_id = str(uuid.uuid4())
 
-    existing_active_job_id = try_register_active_job(request.dataset_path, job_id)
+    existing_active_job_id = try_register_active_dataset_inference_job(request.dataset_path, job_id)
     if existing_active_job_id is not None:
-        active_job = JOB_STORE.get(existing_active_job_id)
+        active_job = DATASET_INFERENCE_JOB_STORE.get(existing_active_job_id)
         if active_job is None:
-            release_active_job(request.dataset_path, existing_active_job_id)
-            existing_active_job_id = try_register_active_job(request.dataset_path, job_id)
-            active_job = JOB_STORE.get(existing_active_job_id) if existing_active_job_id else None
+            release_active_dataset_inference_job(request.dataset_path, existing_active_job_id)
+            existing_active_job_id = try_register_active_dataset_inference_job(request.dataset_path, job_id)
+            active_job = DATASET_INFERENCE_JOB_STORE.get(existing_active_job_id) if existing_active_job_id else None
         if existing_active_job_id is not None:
             if request.resume and store.get_run_config() == requested_run_config and active_job is not None:
                 return _job_to_response(active_job)
@@ -393,11 +393,11 @@ def create_job(request: JobRequest) -> JobStatusResponse:
             logger.error(f"Could not initialise model for a new job: {e}", exc_info=True)
             raise HTTPException(400, f"Could not initialise model: {e}") from e
 
-        job = Job(id=job_id, store=store)
+        job = DatasetInferenceJobStatus(id=job_id, store=store)
         job.categories = dataset.categories
         job.num_images_total = num_images_total
         job.num_images_processed = num_images_processed
-        JOB_STORE[job.id] = job
+        DATASET_INFERENCE_JOB_STORE[job.id] = job
 
         logger.info(
             f"Created job {job.id}: dataset_type='{request.dataset_type}' "
@@ -406,7 +406,7 @@ def create_job(request: JobRequest) -> JobStatusResponse:
         )
 
         thread = threading.Thread(
-            target=run_job,
+            target=run_dataset_inference_job,
             args=(
                 job,
                 dataset,
@@ -420,8 +420,8 @@ def create_job(request: JobRequest) -> JobStatusResponse:
         )
         thread.start()
     except Exception:
-        JOB_STORE.pop(job_id, None)
-        release_active_job(request.dataset_path, job_id)
+        DATASET_INFERENCE_JOB_STORE.pop(job_id, None)
+        release_active_dataset_inference_job(request.dataset_path, job_id)
         raise
 
     return _job_to_response(job)
@@ -432,7 +432,7 @@ def create_job(request: JobRequest) -> JobStatusResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/v1/jobs/load", response_model=JobStatusResponse)
+@app.post("/api/v1/dataset_inference_jobs/load", response_model=JobStatusResponse)
 def load_job(request: LoadJobRequest) -> JobStatusResponse:
     """Load an existing DB from *dataset_path* without re-running inference.
 
@@ -446,7 +446,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     if not DatasetInferenceCache.db_exists(request.dataset_path):
         raise HTTPException(
             404,
-            f"No existing DB found at '{request.dataset_path}'. Run inference first via POST /api/v1/jobs.",
+            f"No existing DB found at '{request.dataset_path}'. Run inference first via POST /api/v1/dataset_inference_jobs.",
         )
 
     store = DatasetInferenceCache(request.dataset_path)
@@ -468,7 +468,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         categories = {int(k): v for k, v in raw.items()}
 
     job_id = str(uuid.uuid4())
-    job = Job(
+    job = DatasetInferenceJobStatus(
         id=job_id,
         store=store,
         status=status,  # type: ignore[arg-type]
@@ -477,7 +477,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     )
     job.num_images_total = store.get_meta("num_images_total") or 0
     job.num_images_processed = store.get_meta("num_images_processed") or 0
-    JOB_STORE[job_id] = job
+    DATASET_INFERENCE_JOB_STORE[job_id] = job
 
     logger.info(f"Loaded existing job {job_id} from '{request.dataset_path}' ({store.record_count()} records)")
     if status == "error":
@@ -493,7 +493,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
+@app.get("/api/v1/dataset_inference_jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     job = _get_job_or_404(job_id)
     return _job_to_response(job)
@@ -513,7 +513,7 @@ class ReductionRequest(PydanticModel):
 
 
 @app.post(
-    "/api/v1/jobs/{job_id}/dimensionality_reduction",
+    "/api/v1/dataset_inference_jobs/{job_id}/dimensionality_reduction",
     response_model=DimensionalityReductionStatusResponse,
 )
 def compute_dimensionality_reduction(
@@ -568,7 +568,7 @@ def _compute_dimensionality_reduction(
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/jobs/{job_id}/records")
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/records")
 def get_job_records(
     job_id: str,
     split: str | None = None,
@@ -583,7 +583,7 @@ def get_job_records(
     return job.store.get_records(split=split, status=status, class_id=class_id, limit=limit, offset=offset)
 
 
-@app.get("/api/v1/jobs/{job_id}/image-paths", response_model=ImagePathPageResponse)
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/image-paths", response_model=ImagePathPageResponse)
 def get_job_image_paths(
     job_id: str,
     split: str | None = None,
@@ -604,7 +604,7 @@ def get_job_image_paths(
     )
 
 
-@app.post("/api/v1/jobs/{job_id}/records/by-image-paths")
+@app.post("/api/v1/dataset_inference_jobs/{job_id}/records/by-image-paths")
 def get_job_records_by_image_paths(job_id: str, payload: RecordsByImagePathsRequest) -> list[dict]:
     job = _get_job_or_404(job_id)
     if job.status != "done":
@@ -687,7 +687,7 @@ def _calculate_job_evaluation(
         raise HTTPException(500, f"Evaluation failed: {exc}") from exc
 
 
-@app.get("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
 def get_job_evaluation(
     job_id: str,
     class_thresholds: str | None = Query(default=None),
@@ -697,7 +697,7 @@ def get_job_evaluation(
     return _calculate_job_evaluation(job_id, class_thresholds, record_ids)
 
 
-@app.post("/api/v1/jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
+@app.post("/api/v1/dataset_inference_jobs/{job_id}/evaluation", response_model=EvaluationMetricsResponse)
 def post_job_evaluation(
     job_id: str,
     request: EvaluationRequest,
@@ -710,7 +710,7 @@ def post_job_evaluation(
     return _calculate_job_evaluation(job_id, class_thresholds, record_ids)
 
 
-@app.get("/api/v1/jobs/{job_id}/optimal-threshold", response_model=OptimalThresholdResponse)
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/optimal-threshold", response_model=OptimalThresholdResponse)
 def get_optimal_threshold(
     job_id: str,
     metric: str = Query(default="f1"),
@@ -769,7 +769,7 @@ def get_optimal_threshold(
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/jobs/{job_id}/images/{record_id}")
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/images/{record_id}")
 def get_record_image(job_id: str, record_id: str) -> FileResponse:
     job = _get_job_or_404(job_id)
     image_path_str = job.store.get_image_path_for_record(record_id)
@@ -787,7 +787,7 @@ def get_record_image(job_id: str, record_id: str) -> FileResponse:
 
 
 @app.post(
-    "/api/v1/jobs/{job_id}/semantic-search",
+    "/api/v1/dataset_inference_jobs/{job_id}/semantic-search",
     response_model=SemanticSearchStatusResponse,
     status_code=202,
 )
@@ -864,7 +864,7 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
 
 
 @app.get(
-    "/api/v1/jobs/{job_id}/semantic-search",
+    "/api/v1/dataset_inference_jobs/{job_id}/semantic-search",
     response_model=list[SemanticSearchStatusResponse],
 )
 def list_semantic_searches(job_id: str) -> list[SemanticSearchStatusResponse]:
@@ -879,7 +879,7 @@ def list_semantic_searches(job_id: str) -> list[SemanticSearchStatusResponse]:
 
 
 @app.get(
-    "/api/v1/jobs/{job_id}/semantic-search/{search_id}",
+    "/api/v1/dataset_inference_jobs/{job_id}/semantic-search/{search_id}",
     response_model=SemanticSearchStatusResponse,
 )
 def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResponse:
@@ -888,7 +888,7 @@ def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResp
     return _search_job_to_response(search_job, include_results=True)
 
 @app.delete(
-        "/api/v1/jobs/{job_id}/semantic-search/{search_id}",
+        "/api/v1/dataset_inference_jobs/{job_id}/semantic-search/{search_id}",
         response_model=dict,
 )
 def cancel_semantic_search(job_id: str, search_id: str) -> dict:
@@ -931,7 +931,7 @@ def _build_run_config(request: JobRequest, split_names: list[str]) -> dict[str, 
     }
 
 
-def _job_to_response(job: Job) -> JobStatusResponse:
+def _job_to_response(job: DatasetInferenceJobStatus) -> JobStatusResponse:
     """Convert an in-memory job to the frontend-facing status response."""
     components = job.store.dimensionality_reduction_components()
     has_reduction = job.store.has_dimensionality_reduction()
@@ -957,14 +957,14 @@ def _job_to_response(job: Job) -> JobStatusResponse:
     )
 
 
-def _get_job_or_404(job_id: str) -> Job:
-    job = JOB_STORE.get(job_id)
+def _get_job_or_404(job_id: str) -> DatasetInferenceJobStatus:
+    job = DATASET_INFERENCE_JOB_STORE.get(job_id)
     if job is None:
         raise HTTPException(404, f"Job not found: {job_id}")
     return job
 
 
-def _get_dataset_type_for_job(job: Job) -> str:
+def _get_dataset_type_for_job(job: DatasetInferenceJobStatus) -> str:
     dataset_type = job.store.get_meta("dataset_type")
     if isinstance(dataset_type, str) and dataset_type in DATASET_REGISTRY:
         return dataset_type
@@ -980,7 +980,7 @@ def _get_dataset_type_for_job(job: Job) -> str:
     )
 
 
-def _get_metrics_calculator_for_job(job: Job, dataset_type: str):
+def _get_metrics_calculator_for_job(job: DatasetInferenceJobStatus, dataset_type: str):
     # Build the calculator from already-loaded job metadata so this endpoint
     # works with existing DBs without forcing dataset re-instantiation.
     if dataset_type == "coco_detection":
@@ -1066,7 +1066,7 @@ def _row_to_match(row: dict[str, Any]) -> Match:
 
 
 def _load_matches_for_job(
-    job: Job,
+    job: DatasetInferenceJobStatus,
     record_ids: list[str] | None = None,
 ) -> tuple[list[Match], list[str] | None]:
     """Load evaluation matches for a job, optionally scoped to selected records."""

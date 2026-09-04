@@ -328,13 +328,13 @@ Si no te gusta la estructura del backend y lo quieres reordenar un poco, cambial
 | `GET` | `/api/v1/model-types` | Lista los modelos registrados (p. ej. `"rfdetr"`). |
 | `GET` | `/api/v1/dataset-types` | Lista los datasets registrados (p. ej. `"coco_detection"`). |
 | `GET` | `/api/v1/check-dataset?path=…` | Comprueba si ya existe un DB previo en esa carpeta. |
-| `POST` | `/api/v1/jobs` | Crea un job nuevo: lanza inferencia en background. |
-| `POST` | `/api/v1/jobs/load` | Carga un job ya hecho desde un DB existente (sin re-inferir). |
-| `GET` | `/api/v1/jobs/{id}` | Consulta el estado/progreso de un job (polling desde el frontend). |
-| `GET` | `/api/v1/jobs/{id}/records` | Devuelve los registros filtrados (split, clase, confidence…). |
-| `POST` | `/api/v1/jobs/{id}/dimensionality_reduction` | Lanza reducción de dimensionalidad sobre los embeddings almacenados. |
-| `POST` | `/api/v1/jobs/{id}/semantic-search` | Inicia una búsqueda de imágenes similares. |
-| `GET` | `/api/v1/jobs/{id}/semantic-search/{sid}` | Consulta el estado/resultados de esa búsqueda. |
+| `POST` | `/api/v1/dataset_inference_jobs` | Crea un job nuevo: lanza inferencia en background. |
+| `POST` | `/api/v1/dataset_inference_jobs/load` | Carga un job ya hecho desde un DB existente (sin re-inferir). |
+| `GET` | `/api/v1/dataset_inference_jobs/{id}` | Consulta el estado/progreso de un job (polling desde el frontend). |
+| `GET` | `/api/v1/dataset_inference_jobs/{id}/records` | Devuelve los registros filtrados (split, clase, confidence…). |
+| `POST` | `/api/v1/dataset_inference_jobs/{id}/dimensionality_reduction` | Lanza reducción de dimensionalidad sobre los embeddings almacenados. |
+| `POST` | `/api/v1/dataset_inference_jobs/{id}/semantic-search` | Inicia una búsqueda de imágenes similares. |
+| `GET` | `/api/v1/dataset_inference_jobs/{id}/semantic-search/{sid}` | Consulta el estado/resultados de esa búsqueda. |
 
 ### Jobs en background
 Cuando el frontend lanza inferencia, el servidor devuelve inmediatamente un `202 Accepted` con el `job_id`. La inferencia corre en un **hilo separado**. El frontend hace polling (`GET /jobs/{id}`) hasta que `status == "done"`. Lo mismo aplica a la búsqueda semántica.

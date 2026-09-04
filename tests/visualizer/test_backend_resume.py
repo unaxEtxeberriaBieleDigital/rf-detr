@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from visualizer.backend.app import JobRequest, check_dataset, create_job
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.datasets.cocodetectiondataset import COCODetectionDataset
-from visualizer.backend.jobs import JOB_STORE, Job, run_job
+from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus, run_job
 from visualizer.backend.models.basemodel import BaseModel
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.registry import MODEL_REGISTRY
@@ -183,7 +183,7 @@ def test_run_job_resume_skips_processed_images_and_preserves_counters(tmp_path: 
     store.set_meta("status", "error")
     store.set_meta("num_images_total", 3)
 
-    job = Job(id="resume-job", store=store, categories={1: "object"})
+    job = DatasetInferenceJobStatus(id="resume-job", store=store, categories={1: "object"})
     run_job(job, dataset, model, [Split.VAL], batch_size=2, iou_threshold=0.5, resume=True)
 
     flattened_calls = [image_name for batch in FakeModel.calls for image_name in batch]
@@ -310,7 +310,7 @@ def test_create_job_resume_reattaches_to_existing_active_job(tmp_path: Path) -> 
     store.set_meta("num_images_total", 3)
     store.set_meta("num_images_processed", 1)
 
-    active_job = Job(
+    active_job = DatasetInferenceJobStatus(
         id="active-job",
         store=store,
         status="running",

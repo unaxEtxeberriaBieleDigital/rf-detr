@@ -56,7 +56,7 @@ export function getDatasetTypes(): Promise<string[]> {
 }
 
 export function createJob(payload: CreateJobRequest): Promise<JobStatusResponse> {
-  return request<JobStatusResponse>("/api/v1/jobs", {
+  return request<JobStatusResponse>("/api/v1/dataset_inference_jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -64,7 +64,7 @@ export function createJob(payload: CreateJobRequest): Promise<JobStatusResponse>
 }
 
 export function getJob(jobId: string): Promise<JobStatusResponse> {
-  return request<JobStatusResponse>(`/api/v1/jobs/${jobId}`);
+  return request<JobStatusResponse>(`/api/v1/dataset_inference_jobs/${jobId}`);
 }
 
 export interface GetJobRecordsParams {
@@ -83,7 +83,7 @@ export function getJobRecords(jobId: string, params: GetJobRecordsParams = {}, s
   search.set("limit", String(params.limit ?? 2000));
   search.set("offset", String(params.offset ?? 0));
 
-  return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records?${search.toString()}`, { signal });
+  return request<EmbeddingRecordDTO[]>(`/api/v1/dataset_inference_jobs/${jobId}/records?${search.toString()}`, { signal });
 }
 
 export interface GetJobImagePathsParams {
@@ -97,7 +97,7 @@ export function getJobImagePaths(jobId: string, params: GetJobImagePathsParams =
   if (params.split) search.set("split", params.split);
   search.set("limit", String(params.limit ?? 60));
   search.set("offset", String(params.offset ?? 0));
-  return request<ImagePathPageResponse>(`/api/v1/jobs/${jobId}/image-paths?${search.toString()}`);
+  return request<ImagePathPageResponse>(`/api/v1/dataset_inference_jobs/${jobId}/image-paths?${search.toString()}`);
 }
 
 export interface RecordsByImagePathsRequest {
@@ -109,7 +109,7 @@ export function getJobRecordsByImagePaths(
   jobId: string,
   payload: RecordsByImagePathsRequest,
 ): Promise<EmbeddingRecordDTO[]> {
-  return request<EmbeddingRecordDTO[]>(`/api/v1/jobs/${jobId}/records/by-image-paths`, {
+  return request<EmbeddingRecordDTO[]>(`/api/v1/dataset_inference_jobs/${jobId}/records/by-image-paths`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -117,7 +117,7 @@ export function getJobRecordsByImagePaths(
 }
 
 export function getRecordImageUrl(jobId: string, recordId: string): string {
-  return `${API_BASE_URL}/api/v1/jobs/${jobId}/images/${encodeURIComponent(recordId)}`;
+  return `${API_BASE_URL}/api/v1/dataset_inference_jobs/${jobId}/images/${encodeURIComponent(recordId)}`;
 }
 
 export function checkDataset(datasetPath: string): Promise<CheckDatasetResponse> {
@@ -126,7 +126,7 @@ export function checkDataset(datasetPath: string): Promise<CheckDatasetResponse>
 }
 
 export function loadJob(datasetPath: string): Promise<JobStatusResponse> {
-  return request<JobStatusResponse>("/api/v1/jobs/load", {
+  return request<JobStatusResponse>("/api/v1/dataset_inference_jobs/load", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_path: datasetPath }),
@@ -143,7 +143,7 @@ export function computeReduction(
   params?: { perplexity?: number; n_neighbors?: number; min_dist?: number },
 ): Promise<DimensionalityReductionStatusResponse> {
   return request<DimensionalityReductionStatusResponse>(
-    `/api/v1/jobs/${jobId}/dimensionality_reduction?components=${components}`,
+    `/api/v1/dataset_inference_jobs/${jobId}/dimensionality_reduction?components=${components}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -175,7 +175,7 @@ export function startSemanticSearch(
   jobId: string,
   payload: StartSemanticSearchRequest,
 ): Promise<SemanticSearchStatusResponse> {
-  return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search`, {
+  return request<SemanticSearchStatusResponse>(`/api/v1/dataset_inference_jobs/${jobId}/semantic-search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -183,16 +183,16 @@ export function startSemanticSearch(
 }
 
 export function listSemanticSearches(jobId: string): Promise<SemanticSearchStatusResponse[]> {
-  return request<SemanticSearchStatusResponse[]>(`/api/v1/jobs/${jobId}/semantic-search`);
+  return request<SemanticSearchStatusResponse[]>(`/api/v1/dataset_inference_jobs/${jobId}/semantic-search`);
 }
 
 export function getSemanticSearch(jobId: string, searchId: string): Promise<SemanticSearchStatusResponse> {
-  return request<SemanticSearchStatusResponse>(`/api/v1/jobs/${jobId}/semantic-search/${searchId}`);
+  return request<SemanticSearchStatusResponse>(`/api/v1/dataset_inference_jobs/${jobId}/semantic-search/${searchId}`);
 }
 
 export function cancelSemanticSearch(jobId: string, searchId: string): Promise<CancelSemanticSearchResponse> {
   return request<CancelSemanticSearchResponse>(
-    `/api/v1/jobs/${jobId}/semantic-search/${searchId}`,
+    `/api/v1/dataset_inference_jobs/${jobId}/semantic-search/${searchId}`,
     {
       method: "DELETE",
     }
@@ -205,7 +205,7 @@ export function getJobEvaluation(
   recordIds?: string[],
 ): Promise<EvaluationMetricsResponse> {
   if (recordIds) {
-    return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation`, {
+    return request<EvaluationMetricsResponse>(`/api/v1/dataset_inference_jobs/${jobId}/evaluation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -218,7 +218,7 @@ export function getJobEvaluation(
   if (classThresholds) search.set("class_thresholds", JSON.stringify(classThresholds));
   if (recordIds) search.set("record_ids", JSON.stringify(recordIds));
   const suffix = search.toString() ? `?${search.toString()}` : "";
-  return request<EvaluationMetricsResponse>(`/api/v1/jobs/${jobId}/evaluation${suffix}`);
+  return request<EvaluationMetricsResponse>(`/api/v1/dataset_inference_jobs/${jobId}/evaluation${suffix}`);
 }
 
 export function getJobOptimalThreshold(
@@ -234,7 +234,7 @@ export function getJobOptimalThreshold(
   });
   if (classId !== undefined) search.set("class_id", String(classId));
   return request<OptimalThresholdResponse>(
-    `/api/v1/jobs/${jobId}/optimal-threshold?${search.toString()}`,
+    `/api/v1/dataset_inference_jobs/${jobId}/optimal-threshold?${search.toString()}`,
     { signal }
   );
 }

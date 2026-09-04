@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from visualizer.backend.app import app
 from visualizer.backend.embeddingrecord import EmbeddingRecord
-from visualizer.backend.jobs import JOB_STORE, Job
+from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus
 from visualizer.backend.prediction import Prediction
 from visualizer.backend.dataset_inference_store import DatasetInferenceCache
 
@@ -31,7 +31,7 @@ def client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def finished_job(tmp_path: Path) -> Job:
+def finished_job(tmp_path: Path) -> DatasetInferenceJobStatus:
     dataset_path = tmp_path / "dataset"
     dataset_path.mkdir()
     store = DatasetInferenceCache(dataset_path)
@@ -88,7 +88,7 @@ def finished_job(tmp_path: Path) -> Job:
         ]
     )
 
-    job = Job(
+    job = DatasetInferenceJobStatus(
         id="finished-job",
         store=store,
         status="done",
@@ -100,9 +100,9 @@ def finished_job(tmp_path: Path) -> Job:
 
 def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache(
     client: TestClient,
-    finished_job: Job,
+    finished_job: DatasetInferenceJobStatus,
 ) -> None:
-    first_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    first_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert first_response.status_code == 200
     first_payload = first_response.json()
@@ -111,7 +111,7 @@ def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache
     assert first_payload["metrics"]["precision"] == pytest.approx(0.5)
     assert first_payload["metrics"]["recall"] == pytest.approx(2.0 / 3.0)
 
-    cached_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    cached_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert cached_response.status_code == 200
     cached_payload = cached_response.json()
@@ -119,7 +119,7 @@ def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache
     assert cached_payload["metrics"] == first_payload["metrics"]
 
     thresholded_response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation",
         params={"class_thresholds": '{"2": 0.5}'},
     )
 
@@ -131,7 +131,7 @@ def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache
     assert thresholded_payload["metrics"]["recall"] == pytest.approx(1.0 / 3.0)
     assert thresholded_payload["metrics"] != first_payload["metrics"]
 
-    cached_after_thresholded_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    cached_after_thresholded_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert cached_after_thresholded_response.status_code == 200
     cached_after_thresholded_payload = cached_after_thresholded_response.json()
@@ -141,9 +141,9 @@ def test_evaluation_applies_class_thresholds_without_reusing_unthresholded_cache
 
 def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
     client: TestClient,
-    finished_job: Job,
+    finished_job: DatasetInferenceJobStatus,
 ) -> None:
-    first_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    first_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert first_response.status_code == 200
     first_payload = first_response.json()
@@ -151,7 +151,7 @@ def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
     assert first_payload["applied_record_ids"] is None
     assert first_payload["applied_record_count"] is None
 
-    cached_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    cached_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert cached_response.status_code == 200
     cached_payload = cached_response.json()
@@ -160,7 +160,7 @@ def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
 
     filtered_params = {"record_ids": '["tp-class-1", "fn-any-class"]'}
     filtered_response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation",
         params=filtered_params,
     )
 
@@ -176,7 +176,7 @@ def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
     assert filtered_payload["metrics"] != first_payload["metrics"]
 
     repeated_filtered_response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation",
         params=filtered_params,
     )
 
@@ -186,7 +186,7 @@ def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
     assert repeated_filtered_payload["calculated_at"] is None
     assert repeated_filtered_payload["metrics"] == filtered_payload["metrics"]
 
-    cached_after_filtered_response = client.get(f"/api/v1/jobs/{finished_job.id}/evaluation")
+    cached_after_filtered_response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation")
 
     assert cached_after_filtered_response.status_code == 200
     cached_after_filtered_payload = cached_after_filtered_response.json()
@@ -196,10 +196,10 @@ def test_evaluation_applies_record_ids_without_reusing_unfiltered_cache(
 
 def test_evaluation_combines_record_ids_and_class_thresholds(
     client: TestClient,
-    finished_job: Job,
+    finished_job: DatasetInferenceJobStatus,
 ) -> None:
     response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation",
         params={
             "record_ids": '["tp-class-1", "fp-class-1", "fn-any-class"]',
             "class_thresholds": '{"1": 0.5}',
@@ -219,10 +219,10 @@ def test_evaluation_combines_record_ids_and_class_thresholds(
 
 def test_evaluation_accepts_large_filter_payload_as_json_body(
     client: TestClient,
-    finished_job: Job,
+    finished_job: DatasetInferenceJobStatus,
 ) -> None:
     response = client.post(
-        f"/api/v1/jobs/{finished_job.id}/evaluation",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/evaluation",
         json={
             "record_ids": ["tp-class-1", "fn-any-class"],
             "class_thresholds": {"1": 0.5},
@@ -235,9 +235,9 @@ def test_evaluation_accepts_large_filter_payload_as_json_body(
     assert payload["metrics"]["precision"] == pytest.approx(1.0)
 
 
-def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, finished_job: Job) -> None:
+def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, finished_job: DatasetInferenceJobStatus) -> None:
     class_one_response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/optimal-threshold",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/optimal-threshold",
         params={"metric": "f1", "num_thresholds": 11, "class_id": 1},
     )
 
@@ -248,7 +248,7 @@ def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, 
     assert class_one_payload["metric_value"] == pytest.approx(2.0 / 3.0)
 
     class_two_response = client.get(
-        f"/api/v1/jobs/{finished_job.id}/optimal-threshold",
+        f"/api/v1/dataset_inference_jobs/{finished_job.id}/optimal-threshold",
         params={"metric": "f1", "num_thresholds": 11, "class_id": 2},
     )
 
@@ -286,13 +286,13 @@ def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, 
 )
 def test_threshold_endpoints_validate_class_inputs(
     client: TestClient,
-    finished_job: Job,
+    finished_job: DatasetInferenceJobStatus,
     params: dict[str, int | str],
     expected_detail: str,
 ) -> None:
     route = "/evaluation" if {"class_thresholds", "record_ids"} & set(params) else "/optimal-threshold"
 
-    response = client.get(f"/api/v1/jobs/{finished_job.id}{route}", params=params)
+    response = client.get(f"/api/v1/dataset_inference_jobs/{finished_job.id}{route}", params=params)
 
     assert response.status_code == 422
     assert response.json()["detail"] == expected_detail

@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""SQLite-backed persistent store for a single visualizer job.
+"""SQLite-backed persistent store for a single visualizer dataset inference job.
 
 One :class:`DatasetInferenceCache` maps to one ``rfdetr_visualizer.db`` file placed at the
 root of the dataset directory.  Raw 512-D embeddings are kept permanently so
@@ -42,7 +42,7 @@ _PCA_BATCH_SIZE = 10_000
 
 
 class DatasetInferenceCache:
-    """Wraps a single SQLite database file for one visualizer job.
+    """Wraps a single SQLite database file for one visualizer  dataset inference job.
 
     Thread-safety: SQLite connections are not shareable across threads by
     default.  We open a *new* connection per public method call using
@@ -80,7 +80,7 @@ class DatasetInferenceCache:
         with self._connect() as conn:
             conn.executescript(
                 """
-                CREATE TABLE IF NOT EXISTS job_meta (
+                CREATE TABLE IF NOT EXISTS dataset_inference_job_meta (
                     key   TEXT PRIMARY KEY,
                     value TEXT
                 );
@@ -114,12 +114,12 @@ class DatasetInferenceCache:
                 );
 
                 CREATE TABLE IF NOT EXISTS evaluation_cache (
-                    job_id         TEXT NOT NULL,
+                    dataset_inference_job_id         TEXT NOT NULL,
                     dataset_type   TEXT NOT NULL,
                     metric_name    TEXT NOT NULL,
                     metric_value   TEXT NOT NULL,
                     calculated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (job_id, dataset_type, metric_name)
+                    PRIMARY KEY (dataset_inference_job_id, dataset_type, metric_name)
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_records_image_path
@@ -133,7 +133,7 @@ class DatasetInferenceCache:
                 CREATE INDEX IF NOT EXISTS idx_processed_images_split
                     ON processed_images (split);
                 CREATE INDEX IF NOT EXISTS idx_evaluation_cache_lookup
-                    ON evaluation_cache (job_id, dataset_type);
+                    ON evaluation_cache (dataset_inference_job_id, dataset_type);
                 """
             )
 
@@ -150,7 +150,7 @@ class DatasetInferenceCache:
         """
         with self._write_lock, self._connect() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO job_meta (key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO dataset_inference_job_meta (key, value) VALUES (?, ?)",
                 (key, json.dumps(value)),
             )
 
@@ -166,7 +166,7 @@ class DatasetInferenceCache:
         """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT value FROM job_meta WHERE key = ?", (key,)
+                "SELECT value FROM dataset_inference_job_meta WHERE key = ?", (key,)
             ).fetchone()
         return json.loads(row["value"]) if row else default
 
@@ -197,30 +197,30 @@ class DatasetInferenceCache:
 
     def cache_metrics(
         self,
-        job_id: str,
+        dataset_inference_job_id: str,
         dataset_type: str,
         metrics: dict[str, Any],
     ) -> None:
-        """Cache computed evaluation metrics for a job/dataset pair.
+        """Cache computed evaluation metrics for a dataset_inference_job/dataset pair.
 
         Args:
-            job_id: In-memory job identifier used by API.
+            dataset_inference_job_id: In-memory inference identifier used by API.
             dataset_type: Dataset registry key (e.g., ``coco_detection``).
             metrics: Mapping metric_name -> JSON-serializable metric value.
         """
         rows = [
-            (job_id, dataset_type, metric_name, json.dumps(metric_value))
+            (dataset_inference_job_id, dataset_type, metric_name, json.dumps(metric_value))
             for metric_name, metric_value in metrics.items()
         ]
         with self._write_lock, self._connect() as conn:
             conn.execute(
-                "DELETE FROM evaluation_cache WHERE job_id = ? AND dataset_type = ?",
-                (job_id, dataset_type),
+                "DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ? AND dataset_type = ?",
+                (dataset_inference_job_id, dataset_type),
             )
             if rows:
                 conn.executemany(
                     """
-                    INSERT INTO evaluation_cache (job_id, dataset_type, metric_name, metric_value)
+                    INSERT INTO evaluation_cache (dataset_inference_job_id, dataset_type, metric_name, metric_value)
                     VALUES (?, ?, ?, ?)
                     """,
                     rows,
@@ -228,13 +228,13 @@ class DatasetInferenceCache:
 
     def get_cached_metrics(
         self,
-        job_id: str,
+        dataset_inference_job_id: str,
         dataset_type: str,
     ) -> tuple[dict[str, Any], str | None] | None:
-        """Get cached metrics for a job/dataset pair.
+        """Get cached metrics for a dataset_inference_job/dataset pair.
 
         Args:
-            job_id: In-memory job identifier used by API.
+            dataset_inference_job_id: In-memory inference identifier used by API.
             dataset_type: Dataset registry key (e.g., ``coco_detection``).
 
         Returns:
@@ -245,10 +245,10 @@ class DatasetInferenceCache:
                 """
                 SELECT metric_name, metric_value, calculated_at
                 FROM evaluation_cache
-                WHERE job_id = ? AND dataset_type = ?
+                WHERE inference_id = ? AND dataset_type = ?
                 ORDER BY metric_name
                 """,
-                (job_id, dataset_type),
+                (dataset_inference_job_id, dataset_type),
             ).fetchall()
 
         if not rows:
@@ -262,22 +262,22 @@ class DatasetInferenceCache:
 
     def invalidate_metrics_cache(
         self,
-        job_id: str,
+        dataset_inference_job_id: str,
         dataset_type: str | None = None,
     ) -> None:
         """Delete cached evaluation metrics.
 
         Args:
-            job_id: In-memory job identifier used by API.
-            dataset_type: Optional dataset type; when omitted removes all cache rows for the job.
+            dataset_inference_job_id: In-memory inference identifier used by API.
+            dataset_type: Optional dataset type; when omitted removes all cache rows for the inference.
         """
         with self._write_lock, self._connect() as conn:
             if dataset_type is None:
-                conn.execute("DELETE FROM evaluation_cache WHERE job_id = ?", (job_id,))
+                conn.execute("DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ?", (dataset_inference_job_id,))
             else:
                 conn.execute(
-                    "DELETE FROM evaluation_cache WHERE job_id = ? AND dataset_type = ?",
-                    (job_id, dataset_type),
+                    "DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ? AND dataset_type = ?",
+                    (dataset_inference_job_id, dataset_type),
                 )
 
     def reset_for_rerun(self) -> None:
@@ -412,7 +412,7 @@ class DatasetInferenceCache:
                 )
 
             conn.execute(
-                "INSERT OR REPLACE INTO job_meta (key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO dataset_inference_job_meta (key, value) VALUES (?, ?)",
                 ("num_images_processed", json.dumps(num_images_processed)),
             )
 
