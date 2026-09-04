@@ -179,20 +179,20 @@ export default function SetupPage() {
           setEtaMessage(null);
         } else if (latest.num_images_total > 0) {
           setStatusMessage(
-            `Calculando embeddings y predicciones: ${latest.num_images_processed}/${latest.num_images_total} imágenes ` +
+            `Computing embeddings and predictions: ${latest.num_images_processed}/${latest.num_images_total} images ` +
             `(${latest.num_records} registros)`,
           );
           setProgressFraction(latest.num_images_processed / latest.num_images_total);
           const remainingSeconds = etaEstimator.update(latest.num_images_processed, latest.num_images_total);
           setEtaMessage(
             remainingSeconds == null
-              ? "Estimando el tiempo restante..."
+              ? "Estimating remaining time..."
               : remainingSeconds === 0
                 ? "Finalizando..."
-                : `Tiempo restante estimado: ${formatDuration(remainingSeconds)}`,
+                : `Estimated remaining time: ${formatDuration(remainingSeconds)}`,
           );
         } else {
-          setStatusMessage(`Calculando embeddings y predicciones... (${latest.num_records} registros)`);
+          setStatusMessage(`Computing embeddings and predictions... (${latest.num_records} registros)`);
           setProgressFraction(null);
           setEtaMessage(null);
         }
@@ -201,7 +201,7 @@ export default function SetupPage() {
       }
 
       if (latest.status === "error") {
-        throw new Error(latest.error ?? "El trabajo ha fallado por un motivo desconocido");
+        throw new Error(latest.error ?? "Dataset inference job failed for unknown reason");
       }
 
       setConfig({
