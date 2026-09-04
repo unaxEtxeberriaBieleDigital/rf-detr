@@ -177,7 +177,7 @@ export default function EvaluationPanel({
           onClick={() => void handleRecalculateWithFilters()}
           disabled={refreshing}
         >
-          {refreshing ? "Recalculando..." : "Recalcular con filtros aplicados"}
+          {refreshing ? "Recomputing..." : "Recompute with applied filters"}
         </button>
         <label>Umbrales óptimos por clase (F1)</label>
         <div className="evaluation-panel__thresholds">
@@ -204,7 +204,7 @@ export default function EvaluationPanel({
           })}
         </select>
         <button className="secondary" onClick={() => void handleFindOptimalThreshold()} disabled={optimizing}>
-          {optimizing ? "Calculando..." : "Calcular umbral óptimo"}
+          {optimizing ? "Calculando..." : "Compute optimal threshold"}
         </button>
         {optimal && (
           <span className="evaluation-panel__optimal">
