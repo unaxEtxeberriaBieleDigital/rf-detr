@@ -358,7 +358,7 @@ Los embeddings se escriben inmediatamente al disco por lotes, para que el consum
 
 Un **`Job`** tiene:
 - `id` — identificador único (UUID).
-- `store` — el `DatasetInferenceCache` asociado (acceso al SQLite).
+- `store` — el `DatasetInferenceStore` asociado (acceso al SQLite).
 - `status` — `"pending"` / `"running"` / `"done"` / `"error"`.
 - `num_images_total` / `num_images_processed` — para mostrar la barra de progreso.
 
@@ -434,7 +434,7 @@ El resultado es una lista de `Match`, cada uno con `(prediction, embedding, grou
 
 ## 9. Guardar resultados — `store.py`
 
-`DatasetInferenceCache` envuelve un archivo SQLite (`rfdetr_visualizer.db`) en la raíz del dataset.
+`DatasetInferenceStore` envuelve un archivo SQLite (`rfdetr_visualizer.db`) en la raíz del dataset.
 
 **Tablas principales:**
 - `records` — un fila por detección: `image_path`, `split`, `status`, `embedding` (JSON), `prediction_*`, `ground_truth_*`, `pca_embedding` (se rellena después de la reducción de dimensionalidad).

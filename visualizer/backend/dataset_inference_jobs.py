@@ -14,7 +14,7 @@ from visualizer.backend.datasets.basedataset import BaseDataset, Split
 from visualizer.backend.embeddingrecord import EmbeddingRecord
 from visualizer.backend.evaluator import match_detections
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.dataset_inference_store import DatasetInferenceCache
+from visualizer.backend.dataset_inference_store import DatasetInferenceStore
 
 logger = get_logger()
 
@@ -26,7 +26,7 @@ class DatasetInferenceJobStatus:
     """State for one embedding-extraction-and-evaluation run, backed by a SQLite DB."""
 
     id: str
-    store: DatasetInferenceCache
+    store: DatasetInferenceStore
     status: DatasetInferenceJobStatus = "pending"
     error: str | None = None
     categories: dict[int, str] = field(default_factory=dict)

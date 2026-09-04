@@ -6,14 +6,14 @@
 
 """SQLite-backed persistent store for a single visualizer dataset inference job.
 
-One :class:`DatasetInferenceCache` maps to one ``rfdetr_visualizer.db`` file placed at the
+One :class:`DatasetInferenceStore` maps to one ``rfdetr_visualizer.db`` file placed at the
 root of the dataset directory.  Raw 512-D embeddings are kept permanently so
 that dimensionality reduction can be (re-)computed at any time without
 re-running inference.
 
 Typical lifecycles
 -----------------
-1. ``DatasetInferenceCache(dataset_path)``      – opens (or creates) the DB
+1. ``DatasetInferenceStore(dataset_path)``      – opens (or creates) the DB
 2. ``store.create_tables()``       – idempotent schema setup (called by jobs.py)
 3. ``store.insert_records(batch)`` – called once per inference batch
 4. ``store.compute_reduction(2)``  – on-demand, updates reduced-coordinates column
@@ -41,7 +41,7 @@ PROGRESS_SCHEMA_VERSION = 1
 _PCA_BATCH_SIZE = 10_000
 
 
-class DatasetInferenceCache:
+class DatasetInferenceStore:
     """Wraps a single SQLite database file for one visualizer  dataset inference job.
 
     Thread-safety: SQLite connections are not shareable across threads by

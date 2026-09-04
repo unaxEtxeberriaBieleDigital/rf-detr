@@ -14,7 +14,7 @@ from visualizer.backend.app import app
 from visualizer.backend.embeddingrecord import EmbeddingRecord
 from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus
 from visualizer.backend.prediction import Prediction
-from visualizer.backend.dataset_inference_store import DatasetInferenceCache
+from visualizer.backend.dataset_inference_store import DatasetInferenceStore
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def client() -> Iterator[TestClient]:
 def finished_job(tmp_path: Path) -> DatasetInferenceJobStatus:
     dataset_path = tmp_path / "dataset"
     dataset_path.mkdir()
-    store = DatasetInferenceCache(dataset_path)
+    store = DatasetInferenceStore(dataset_path)
     store.create_tables()
     store.set_meta("dataset_type", "coco_detection")
     store.set_meta("categories", {1: "cat", 2: "dog"})
