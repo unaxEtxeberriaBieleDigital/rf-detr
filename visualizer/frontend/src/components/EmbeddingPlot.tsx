@@ -215,7 +215,7 @@ export default function EmbeddingPlot({
         onClick={onComputeReduction}
         disabled={reductionRunning}
       >
-        {reductionRunning ? "Calculando..." : activePcaDims ? "Recalcular" : "Calcular"}
+        {reductionRunning ? "Computing..." : activePcaDims ? "Compute again" : "Compute"}
       </button>
       {reductionError && <span className="pca-error">{reductionError}</span>}
 
@@ -251,7 +251,7 @@ export default function EmbeddingPlot({
           }}
         >
           <p>
-            Usa el panel <strong>Calcular</strong> para visualizar los embeddings en el scatter plot.
+            Usa el panel <strong>Compute</strong> para visualizar los embeddings en el scatter plot.
           </p>
         </div>
       </div>
