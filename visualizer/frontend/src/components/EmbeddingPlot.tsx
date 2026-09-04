@@ -251,7 +251,7 @@ export default function EmbeddingPlot({
           }}
         >
           <p>
-            Usa el panel <strong>Compute</strong> para visualizar los embeddings en el scatter plot.
+            Use the panel <strong>Compute</strong> to visualize the embeddings in the scatter plot.
           </p>
         </div>
       </div>
