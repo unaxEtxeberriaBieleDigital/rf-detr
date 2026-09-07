@@ -48,8 +48,17 @@
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* Keep each tile at its own aspect-ratio height instead of being stretched to match the
+     tallest tile in its row (the grid item default) or padded to fill the container. */
+  align-content: start;
+  align-items: start;
   gap: 0.6rem;
   padding: 0.8rem;
+}
+
+.search-panel-results-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
 }
 
 .ss-sidebar {

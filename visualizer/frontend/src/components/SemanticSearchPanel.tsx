@@ -21,6 +21,7 @@ interface SemanticSearchPanelProps {
 }
 
 const POLL_INTERVAL_MS = 1500;
+const RESULTS_PAGE_SIZE = 40;
 
 export default function SemanticSearchPanel({
   jobId,
@@ -31,7 +32,11 @@ export default function SemanticSearchPanel({
   const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [queryRecord, setQueryRecord] = useState<EmbeddingRecordDTO | null>(null);
+  const [revealedCount, setRevealedCount] = useState(RESULTS_PAGE_SIZE);
   const pollRef = useRef<number | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +64,29 @@ export default function SemanticSearchPanel({
       }
     };
   }, [jobId, searchId]);
+
+  // Reveal results incrementally instead of all at once: a new search starts back at one page.
+  useEffect(() => {
+    setRevealedCount(RESULTS_PAGE_SIZE);
+  }, [searchId]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = resultsRef.current;
+    if (!sentinel || !root) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry?.isIntersecting) {
+          setRevealedCount((current) => current + RESULTS_PAGE_SIZE);
+        }
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [status]);
 
   useEffect(() => {
     if (!status) return;
@@ -164,14 +192,14 @@ export default function SemanticSearchPanel({
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0px 10px' }}>
             <p className="search-panel-summary">
-              {status.results?.length ?? 0} vecino(s) encontrado(s)
+              Mostrando {Math.min(revealedCount, status.results?.length ?? 0)} de {status.results?.length ?? 0} vecino(s) encontrado(s)
             </p>
             {isActive &&
               <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancelar búsqueda</button>
             }
           </div>
-          <div className="search-panel-results">
-            {(status.results ?? []).map((r, i) => {
+          <div className="search-panel-results" ref={resultsRef}>
+            {(status.results ?? []).slice(0, revealedCount).map((r, i) => {
               const label = categories[r.class_id] ?? `Clase ${r.class_id}`;
               const imageUrl = r.preview_data_url;
               return (
@@ -206,6 +234,7 @@ export default function SemanticSearchPanel({
                 />
               );
             })}
+            <div ref={sentinelRef} className="search-panel-results-sentinel" />
           </div>
         </>
       )}

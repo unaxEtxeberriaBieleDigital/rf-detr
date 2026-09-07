@@ -2,6 +2,9 @@
 .image-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* Keep each tile at its own aspect-ratio height instead of being stretched to match the
+     tallest tile in its row (the grid item default). */
+  align-items: start;
 }
 
 .image-gallery-empty {
