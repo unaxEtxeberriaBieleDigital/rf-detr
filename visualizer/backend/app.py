@@ -63,7 +63,12 @@ from visualizer.backend.evaluation.types import Match
 from visualizer.backend.metrics import get_metrics_for_dataset
 from visualizer.backend.models import rfdetr  # noqa: F401
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
-from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
+from visualizer.backend.semantic_search import (
+    SEARCH_JOB_STORE,
+    SearchJob,
+    run_semantic_search,
+    try_register_active_search,
+)
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.shared_types.prediction import Prediction
@@ -721,7 +726,11 @@ def create_semantic_search(job_id: str, request: SemanticSearchRequest) -> Seman
         k=request.k,
         source_type=request.source_type,
     )
-    SEARCH_JOB_STORE[search_job.id] = search_job
+    if not try_register_active_search(search_job):
+        raise HTTPException(
+            409,
+            "A semantic search is already running. Wait for it to finish or cancel it before starting another.",
+        )
 
     logger.info(
         f"Created semantic search {search_job.id} for job {job_id}: "

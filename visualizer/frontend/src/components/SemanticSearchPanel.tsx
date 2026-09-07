@@ -12,24 +12,67 @@ import type {
 } from "../types";
 import ImageTile from "./ImageTile";
 import ImageWithBoxes from "./ImageWithBoxes";
+import LoadingDiv from "./LoadingDiv";
 
 interface SemanticSearchPanelProps {
   jobId: string;
-  searchId: string;
+  searchId: string | null;
   categories: Record<number, string>;
+  initialStatus: SemanticSearchStatusResponse | null;
   onOpenResult: (result: SemanticSearchResultDTO, imageUrl: string) => void;
+}
+
+interface SemanticSearchResultsProps extends Omit<SemanticSearchPanelProps, "searchId"> {
+  searchId: string;
 }
 
 const POLL_INTERVAL_MS = 1500;
 const RESULTS_PAGE_SIZE = 40;
+const searchStatusCache = new Map<string, SemanticSearchStatusResponse>();
 
 export default function SemanticSearchPanel({
   jobId,
   searchId,
   categories,
+  initialStatus,
   onOpenResult,
 }: SemanticSearchPanelProps) {
-  const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(null);
+  if (!searchId) {
+    return (
+      <section className="visualizer-search-panel">
+        <div className="search-panel-empty">
+          <h2>No hay ninguna búsqueda semántica en ejecución.</h2>
+          <p>
+            Abre una imagen desde <strong>Image gallery</strong>, selecciona una detección y pulsa
+            <strong> Buscar similares</strong> para iniciar una búsqueda.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <SemanticSearchResults
+      jobId={jobId}
+      searchId={searchId}
+      categories={categories}
+      initialStatus={initialStatus}
+      onOpenResult={onOpenResult}
+    />
+  );
+}
+
+function SemanticSearchResults({
+  jobId,
+  searchId,
+  categories,
+  initialStatus,
+  onOpenResult,
+}: SemanticSearchResultsProps) {
+  const cachedStatus = searchStatusCache.get(searchId);
+  const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(
+    cachedStatus ?? initialStatus,
+  );
   const [error, setError] = useState<string | null>(null);
   const [queryRecord, setQueryRecord] = useState<EmbeddingRecordDTO | null>(null);
   const [revealedCount, setRevealedCount] = useState(RESULTS_PAGE_SIZE);
@@ -37,16 +80,21 @@ export default function SemanticSearchPanel({
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    if (initialStatus?.id !== searchId) return;
+    setStatus((current) => current ?? initialStatus);
+  }, [initialStatus, searchId]);
 
   useEffect(() => {
     let cancelled = false;
-    setStatus(null);
+    setStatus(searchStatusCache.get(searchId) ?? initialStatus);
     setError(null);
 
     function poll(): void {
       getSemanticSearch(jobId, searchId)
         .then((updated) => {
           if (cancelled) return;
+          searchStatusCache.set(searchId, updated);
           setStatus(updated);
         })
         .catch((e) => {
@@ -63,7 +111,7 @@ export default function SemanticSearchPanel({
         pollRef.current = null;
       }
     };
-  }, [jobId, searchId]);
+  }, [jobId, searchId, initialStatus]);
 
   // Reveal results incrementally instead of all at once: a new search starts back at one page.
   useEffect(() => {
@@ -136,10 +184,7 @@ export default function SemanticSearchPanel({
       {error && <p className="setup-error">{error}</p>}
 
       {!error && !status &&
-        <>
-          <p className="image-gallery-loading">Cargando...</p>
-          <div className="loader" />
-        </>
+          <LoadingDiv />
       }
 
       {status && status.status !== "error" && (

@@ -4,6 +4,7 @@ import {
   computeReduction,
   getJobOptimalThreshold,
   getJobRecords,
+  listSemanticSearches,
   loadJob,
 } from "../api/client";
 import EmbeddingPlot from "../components/EmbeddingPlot";
@@ -15,7 +16,12 @@ import ImageViewerModal from "../components/ImageViewerModal";
 import SemanticSearchPanel from "../components/SemanticSearchPanel";
 import MultiPanelLayout, { type PanelDefinition } from "../components/MultiPanelLayout";
 import { useAppConfig } from "../context/AppContext";
-import type { ClassThresholds, EmbeddingRecordDTO, SemanticSearchResultDTO } from "../types";
+import type {
+  ClassThresholds,
+  EmbeddingRecordDTO,
+  SemanticSearchResultDTO,
+  SemanticSearchStatusResponse,
+} from "../types";
 import LoadingDiv from "../components/LoadingDiv";
 import { Funnel } from "lucide-react";
 import bieleLogo from "../assets/logos/biele-logo.png"
@@ -30,6 +36,8 @@ export default function VisualizerPage() {
 
   // Semantic search y Control de Layout
   const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
+  const [semanticSearchStatus, setSemanticSearchStatus] =
+    useState<SemanticSearchStatusResponse | null>(null);
   const [activePanelIds, setActivePanelIds] = useState<string[]>(["gallery"]);
   const [openResult, setOpenResult] = useState<{ result: SemanticSearchResultDTO; imageUrl: string } | null>(null);
 
@@ -114,6 +122,32 @@ export default function VisualizerPage() {
       controller.abort();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.jobId]);
+
+  useEffect(() => {
+    if (!config) return;
+
+    let cancelled = false;
+    listSemanticSearches(config.jobId)
+      .then((searches) => {
+        if (cancelled) return;
+        const activeSearch = searches.find(
+          (search) => search.status === "pending" || search.status === "running",
+        );
+        setActiveSearchId(activeSearch?.id ?? null);
+        setSemanticSearchStatus(activeSearch ?? null);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          console.error("Could not restore semantic search:", e);
+          setActiveSearchId(null);
+          setSemanticSearchStatus(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [config?.jobId]);
 
   async function getAllRecords(jobId: string, signal?: AbortSignal): Promise<EmbeddingRecordDTO[]> {
@@ -253,7 +287,8 @@ export default function VisualizerPage() {
             }}
             onSearchStarted={(searchId) => {
               setActiveSearchId(searchId);
-              // Forzar apertura del panel cuando se inicia una búsqueda
+              setSemanticSearchStatus(null);
+              // Open the progress panel for a newly created search.
               setActivePanelIds((prev) =>
                 prev.includes("semantic-search") ? prev : [...prev, "semantic-search"]
               );
@@ -300,21 +335,19 @@ export default function VisualizerPage() {
       },
     ];
 
-    // Añadir el panel de Búsqueda Semántica dinámicamente
-    if (activeSearchId) {
-      defs.push({
-        id: "semantic-search",
-        title: "Búsqueda Semántica",
-        component: () => (
-          <SemanticSearchPanel
-            jobId={config.jobId}
-            searchId={activeSearchId}
-            categories={config.categories}
-            onOpenResult={(result, imageUrl) => setOpenResult({ result, imageUrl })}
-          />
-        ),
-      });
-    }
+    defs.push({
+      id: "semantic-search",
+      title: "Búsqueda Semántica",
+      component: () => (
+        <SemanticSearchPanel
+          jobId={config.jobId}
+          searchId={activeSearchId}
+          categories={config.categories}
+          initialStatus={semanticSearchStatus}
+          onOpenResult={(result, imageUrl) => setOpenResult({ result, imageUrl })}
+        />
+      ),
+    });
 
     return defs;
   }, [
@@ -334,7 +367,8 @@ export default function VisualizerPage() {
     classThresholds,
     evaluationThresholds,
     filteredRecordIds,
-    activeSearchId, // Muy importante para que re-renderice al iniciar la búsqueda
+    activeSearchId,
+    semanticSearchStatus,
   ]);
 
   if (!config) return null;
@@ -400,10 +434,6 @@ export default function VisualizerPage() {
                 activePanelIds={activePanelIds}
                 onActivePanelIdsChange={(newIds) => {
                   setActivePanelIds(newIds);
-                  // Si el usuario cerró el panel con la '✕', anulamos la búsqueda actual
-                  if (!newIds.includes("semantic-search") && activeSearchId !== null) {
-                    setActiveSearchId(null);
-                  }
                 }}
                 availablePanels={panelDefinitions}
               />

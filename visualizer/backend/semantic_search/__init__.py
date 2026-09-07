@@ -18,9 +18,11 @@ Public API re-exported here for convenience:
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
 from visualizer.backend.semantic_search.engine import (
     SEARCH_JOB_STORE,
+    SEARCH_JOB_STORE_LOCK,
     SearchJob,
     SearchResult,
     run_semantic_search,
+    try_register_active_search,
 )
 from visualizer.backend.semantic_search.types import ScanUnit
 
@@ -28,6 +30,8 @@ __all__ = [
     "SearchJob",
     "SearchResult",
     "SEARCH_JOB_STORE",
+    "SEARCH_JOB_STORE_LOCK",
+    "try_register_active_search",
     "run_semantic_search",
     "BaseSemanticSearchSource",
     "ScanUnit",

@@ -22,6 +22,7 @@ results.
 """
 
 import heapq
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,23 @@ _BATCH_SIZE = 8
 # Maps search_id -> SearchJob. Kept alongside visualizer.backend.jobs.JOB_STORE; a search
 # job outlives any particular frontend tab as long as the backend process is alive.
 SEARCH_JOB_STORE: dict[str, SearchJob] = {}
+SEARCH_JOB_STORE_LOCK = threading.Lock()
+
+
+def try_register_active_search(search_job: SearchJob) -> bool:
+    """Atomically register a search if no other search is pending or running.
+
+    Args:
+        search_job: The new search job to register.
+
+    Returns:
+        ``True`` when the job was registered, otherwise ``False``.
+    """
+    with SEARCH_JOB_STORE_LOCK:
+        if any(search.status in {"pending", "running"} for search in SEARCH_JOB_STORE.values()):
+            return False
+        SEARCH_JOB_STORE[search_job.id] = search_job
+        return True
 
 
 def run_semantic_search(
@@ -199,4 +217,11 @@ def _cosine_distance(query_vec: np.ndarray, query_norm: float, vec: np.ndarray) 
     return 1.0 - similarity
 
 
-__all__ = ["SearchJob", "SearchResult", "SEARCH_JOB_STORE", "run_semantic_search"]
+__all__ = [
+    "SearchJob",
+    "SearchResult",
+    "SEARCH_JOB_STORE",
+    "SEARCH_JOB_STORE_LOCK",
+    "try_register_active_search",
+    "run_semantic_search",
+]

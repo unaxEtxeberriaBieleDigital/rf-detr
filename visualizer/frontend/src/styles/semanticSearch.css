@@ -1,4 +1,21 @@
 /* ── Semantic search panel ── */
+.search-panel-empty {
+  max-width: 36rem;
+  padding: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.search-panel-empty h2 {
+  margin: 0 0 0.75rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.search-panel-empty p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .search-panel-header {
   display: flex;
   align-items: center;
