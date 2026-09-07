@@ -40,7 +40,7 @@ def iter_image_files(folder: Path) -> Iterator[Path]:
     Yields:
         Paths of the image files found, sorted so repeated scans are deterministic.
     """
-    for path in sorted(folder.rglob("*")):
+    for path in sorted(folder.glob("*")):
         if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
             yield path
 
