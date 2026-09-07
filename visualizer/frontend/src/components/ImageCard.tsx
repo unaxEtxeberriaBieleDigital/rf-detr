@@ -1,6 +1,6 @@
 import { getRecordImageUrl } from "../api/client";
 import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
-import ImageWithBoxes from "./ImageWithBoxes";
+import ImageTile from "./ImageTile";
 
 interface ImageCardProps {
   jobId: string;
@@ -30,26 +30,21 @@ export default function ImageCard({
   const gtCount = records.filter((r) => r.ground_truth?.bbox).length;
 
   return (
-    <div
-      className={`image-tile ${isSelected ? "image-tile-selected" : ""}`}
-      onClick={onOpen}
+    <ImageTile
+      imageUrl={imageUrl}
+      imagePath={imagePath}
+      records={records}
+      minConfidence={minConfidence}
+      classThresholds={classThresholds}
+      isSelected={isSelected}
       title={`${imagePath}\nGT: ${gtCount} · records: ${records.length}`}
-    >
-      <div className="image-tile-frame">
-        {imageUrl && (
-          <ImageWithBoxes
-            imageUrl={imageUrl}
-            imagePath={imagePath}
-            records={records}
-            minConfidence={minConfidence}
-            classThresholds={classThresholds}
-          />
-        )}
-        <span className="image-tile-name">
+      caption={
+        <>
           {split && <span className="image-tile-split">{split}</span>}
           {fileName}
-        </span>
-      </div>
-    </div>
+        </>
+      }
+      onOpen={onOpen}
+    />
   );
 }

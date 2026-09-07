@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { getSemanticSearch, cancelSemanticSearch } from "../api/client";
-import type { SemanticSearchResultDTO, SemanticSearchStatusResponse } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  cancelSemanticSearch,
+  getJobRecordsByImagePaths,
+  getRecordImageUrl,
+  getSemanticSearch,
+} from "../api/client";
+import type {
+  EmbeddingRecordDTO,
+  SemanticSearchResultDTO,
+  SemanticSearchStatusResponse,
+} from "../types";
+import ImageTile from "./ImageTile";
 import ImageWithBoxes from "./ImageWithBoxes";
 
 interface SemanticSearchPanelProps {
@@ -11,9 +21,6 @@ interface SemanticSearchPanelProps {
 }
 
 const POLL_INTERVAL_MS = 1500;
-const MIN_TILE_SIZE = 90;
-const MAX_TILE_SIZE = 320;
-const DEFAULT_TILE_SIZE = 160;
 
 export default function SemanticSearchPanel({
   jobId,
@@ -23,7 +30,7 @@ export default function SemanticSearchPanel({
 }: SemanticSearchPanelProps) {
   const [status, setStatus] = useState<SemanticSearchStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tileSize, setTileSize] = useState(DEFAULT_TILE_SIZE);
+  const [queryRecord, setQueryRecord] = useState<EmbeddingRecordDTO | null>(null);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -63,6 +70,31 @@ export default function SemanticSearchPanel({
     }
   }, [status]);
 
+  const queryRecordId = status?.query_record_id ?? null;
+  const queryImagePath = status?.query_image_path ?? null;
+
+  // The status payload identifies the query detection but carries no boxes, so the record
+  // backing it is fetched once to draw the bbox on the preview.
+  useEffect(() => {
+    if (!queryRecordId || !queryImagePath) {
+      setQueryRecord(null);
+      return;
+    }
+    let cancelled = false;
+    getJobRecordsByImagePaths(jobId, { image_paths: [queryImagePath] })
+      .then((records) => {
+        if (cancelled) return;
+        setQueryRecord(records.find((record) => record.id === queryRecordId) ?? null);
+      })
+      .catch(() => {
+        // The preview is best-effort: a failure here must not hide search progress.
+        if (!cancelled) setQueryRecord(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, queryRecordId, queryImagePath]);
+
   const progressPct = useMemo(() => {
     if (!status || status.num_images_total === 0) return 0;
     return Math.min(100, Math.round((status.num_images_processed / status.num_images_total) * 100));
@@ -84,21 +116,35 @@ export default function SemanticSearchPanel({
 
       {status && status.status !== "error" && (
         <div className="search-panel-progress">
-          <div className="ss-progress-bar">
-            <div
-              className={`ss-progress-fill ss-progress-fill-${status.status}`}
-              style={{ width: `${progressPct}%` }}
-            />
+          {queryRecordId && (
+            <div className="ss-query-preview" title={queryImagePath ?? undefined}>
+              <ImageWithBoxes
+                imageUrl={getRecordImageUrl(jobId, queryRecordId)}
+                imagePath={queryImagePath ?? ""}
+                records={queryRecord ? [queryRecord] : []}
+                minConfidence={0}
+                showGroundTruths={false}
+                showPredictions
+              />
+            </div>
+          )}
+          <div className="ss-progress-body">
+            <div className="ss-progress-bar">
+              <div
+                className={`ss-progress-fill ss-progress-fill-${status.status}`}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <p className="ss-progress-label">
+              {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
+              {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
+                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas (${progressPct}%)`}
+              {status.status === "done" &&
+                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas`}
+              {status.status === "cancelled" &&
+                `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
+            </p>
           </div>
-          <p className="ss-progress-label">
-            {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
-            {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
-              `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas (${progressPct}%)`}
-            {status.status === "done" &&
-              `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas`}
-            {status.status === "cancelled" &&
-              `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
-          </p>
         </div>
       )}
 
@@ -124,60 +170,40 @@ export default function SemanticSearchPanel({
               <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancelar búsqueda</button>
             }
           </div>
-          <div className="search-panel-toolbar">
-            <label htmlFor="ss-zoom-slider" className="search-panel-zoom-label">
-              Tamaño: {tileSize}px
-            </label>
-            <input
-              id="ss-zoom-slider"
-              type="range"
-              min={MIN_TILE_SIZE}
-              max={MAX_TILE_SIZE}
-              step={10}
-              value={tileSize}
-              onChange={(e) => setTileSize(Number(e.currentTarget.value))}
-              className="search-panel-zoom-slider"
-            />
-          </div>
-          <div
-            className="search-panel-results"
-            style={{ "--ss-tile-size": `${tileSize}px` } as CSSProperties}
-          >
+          <div className="search-panel-results">
             {(status.results ?? []).map((r, i) => {
               const label = categories[r.class_id] ?? `Clase ${r.class_id}`;
               const imageUrl = r.preview_data_url;
               return (
-                <div
+                <ImageTile
                   key={i}
-                  className="ss-result-card"
+                  imageUrl={imageUrl}
+                  imagePath={r.image_path}
                   title={r.image_path}
-                  onClick={() => onOpenResult(r, imageUrl)}
-                >
-                  <div className="ss-result-frame">
-                    <ImageWithBoxes
-                      imageUrl={imageUrl}
-                      imagePath={r.image_path}
-                      records={[
-                        {
-                          id: `${searchId}-${i}`,
-                          image_path: r.image_path,
-                          split: "",
-                          embedding: null,
-                          prediction: { class_id: r.class_id, confidence: r.confidence, bbox: r.bbox },
-                          ground_truth: null,
-                          status: "tp",
-                        },
-                      ]}
-                      minConfidence={0}
-                      showGroundTruths={false}
-                      showPredictions
-                    />
-                  </div>
-                  <div className="ss-result-meta">
-                    <span>{label}</span>
-                    <span>dist. {r.distance.toFixed(3)}</span>
-                  </div>
-                </div>
+                  records={[
+                    {
+                      id: `${searchId}-${i}`,
+                      image_path: r.image_path,
+                      split: "",
+                      embedding: null,
+                      prediction: { class_id: r.class_id, confidence: r.confidence, bbox: r.bbox },
+                      ground_truth: null,
+                      status: "tp",
+                      iou: null,
+                    },
+                  ]}
+                  minConfidence={0}
+                  showGroundTruths={false}
+                  showPredictions
+                  caption={
+                    <>
+                      <span className="image-tile-caption-text">{label}</span>
+                      <span>dist. {r.distance.toFixed(3)}</span>
+                    </>
+                  }
+                  captionClassName="image-tile-name-row"
+                  onOpen={() => onOpenResult(r, imageUrl)}
+                />
               );
             })}
           </div>

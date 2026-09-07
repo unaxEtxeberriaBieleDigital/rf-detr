@@ -89,6 +89,20 @@
   transform: translateY(0);
 }
 
+/* Caption laid out as a split row (e.g. label on the left, metric on the right). */
+.image-tile-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.image-tile-caption-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .image-viewer-split,
 .image-tile-split {
   display: inline-block;
