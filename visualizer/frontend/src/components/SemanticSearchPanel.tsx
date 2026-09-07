@@ -211,9 +211,9 @@ function SemanticSearchResults({
             <p className="ss-progress-label">
               {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
               {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
-                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas (${progressPct}%)`}
+                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} scanned images (${progressPct}%)`}
               {status.status === "done" &&
-                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes escaneadas`}
+                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} scanned images`}
               {status.status === "cancelled" &&
                 `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
             </p>
@@ -237,10 +237,10 @@ function SemanticSearchResults({
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0px 10px' }}>
             <p className="search-panel-summary">
-              Mostrando {Math.min(revealedCount, status.results?.length ?? 0)} de {status.results?.length ?? 0} vecino(s) encontrado(s)
+              Showing {Math.min(revealedCount, status.results?.length ?? 0)} of {status.results?.length ?? 0} found neighbours(s)
             </p>
             {isActive &&
-              <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancelar búsqueda</button>
+              <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancel search</button>
             }
           </div>
           <div className="search-panel-results" ref={resultsRef}>

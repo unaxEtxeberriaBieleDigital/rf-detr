@@ -334,7 +334,7 @@ export default function EmbeddingPlot({
               dragmode: dimensions === 2 ? "pan" : "orbital rotation",
               ...(dimensions === 2
                 ? { xaxis: { visible: false }, yaxis: { visible: false } }
-                : { scene: { xaxis: { visible: false }, yaxis: { visible: false }, zaxis: { visible: false } } }),
+                : { scene: { xaxis: { visible: true }, yaxis: { visible: true }, zaxis: { visible: true } } }),
             }}
             style={{ width: "100%", height: "100%" }}
             useResizeHandler

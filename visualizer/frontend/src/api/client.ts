@@ -221,7 +221,7 @@ export function getJobEvaluation(
   return request<EvaluationMetricsResponse>(`/api/v1/dataset_inference_jobs/${jobId}/evaluation${suffix}`);
 }
 
-export function getJobOptimalThreshold(
+export function getJobOptimalThresholdByClass(
   jobId: string,
   metricName: string,
   numThresholds = 100,

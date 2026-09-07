@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ReductionAlgorithm,
   computeReduction,
-  getJobOptimalThreshold,
+  getJobOptimalThresholdByClass,
   getJobRecords,
   listSemanticSearches,
   loadJob,
@@ -175,7 +175,7 @@ export default function VisualizerPage() {
     )];
     const results = await Promise.all(
       classIds.map(async (classId) => {
-        const optimal = await getJobOptimalThreshold(jobId, "f1", 120, classId, signal);
+        const optimal = await getJobOptimalThresholdByClass(jobId, "f1", 120, classId, signal);
         return [classId, optimal.threshold] as const;
       }),
     );
@@ -337,7 +337,7 @@ export default function VisualizerPage() {
 
     defs.push({
       id: "semantic-search",
-      title: "Búsqueda Semántica",
+      title: "Semantic Search",
       component: () => (
         <SemanticSearchPanel
           jobId={config.jobId}

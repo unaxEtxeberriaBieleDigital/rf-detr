@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import createPlotlyComponent from "react-plotly.js/factory";
 import type { Data } from "plotly.js";
-import { getJobEvaluation, getJobOptimalThreshold } from "../api/client";
+import { getJobEvaluation, getJobOptimalThresholdByClass } from "../api/client";
 import type {
   ClassThresholds,
   EvaluationMetricsResponse,
@@ -114,7 +114,7 @@ export default function EvaluationPanel({
     setOptimizing(true);
     setError(null);
     try {
-      const response = await getJobOptimalThreshold(jobId, selectedMetric, 120);
+      const response = await getJobOptimalThresholdByClass(jobId, selectedMetric, 120);
       setOptimal(response);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
