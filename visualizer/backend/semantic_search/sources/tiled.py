@@ -22,6 +22,7 @@ from ``result.unit_id``), so what the user sees is precisely what was scored.
 """
 
 import io
+import math
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,16 +30,16 @@ import numpy as np
 from PIL import Image
 
 from rfdetr.utilities.logger import get_logger
-from visualizer.backend.datasets.basedataset import SUPPORTED_IMAGE_EXTENSIONS
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import register_semantic_search_source
+from visualizer.backend.semantic_search.engine import SearchResult
 from visualizer.backend.semantic_search.sources.basesource import (
     BaseSemanticSearchSource,
     ScanUnit,
     SearchResultPreview,
+    iter_image_files,
 )
-from visualizer.backend.semantic_search.engine import SearchResult
+from visualizer.backend.shared_types.prediction import Prediction
 
 logger = get_logger()
 
@@ -66,47 +67,77 @@ class TiledImageSource(BaseSemanticSearchSource):
     #: pixels, keeping them light enough to embed as base64 data URLs.
     PREVIEW_MAX_SIZE = 800
 
+    def get_num_units(self, folder: Path, model: BaseModel | None = None) -> int:
+        """Count the tiles :meth:`iter_scan_units` would yield for *folder*.
+
+        Only each image's header is read (PIL's ``Image.open`` is lazy, so ``img.size`` does not decode any pixel data),
+        making this cheap enough to run up front on a folder of very large images.
+        """
+        tile_size = self._resolve_tile_size(model)
+        num_units = 0
+        for path in iter_image_files(folder):
+            with Image.open(path) as img:
+                orig_w, orig_h = img.size
+            resized_w, resized_h = self._resized_size(orig_w, orig_h)
+            num_units += math.ceil(resized_w / tile_size) * math.ceil(resized_h / tile_size)
+        return num_units
+
     def iter_scan_units(self, folder: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
-        """Yield one :class:`ScanUnit` per tile of every supported image under *folder*."""
-        for path in sorted(folder.rglob("*")):
-            if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                yield from self._iter_image_tiles(path, model)
+        """Yield one :class:`ScanUnit` per tile of every supported image under *folder*.
+
+        Lazy on purpose: only the image currently being tiled is held in memory, so the
+        engine can start inferring before the rest of the folder has even been opened.
+        """
+        for path in iter_image_files(folder):
+            yield from self._iter_image_tiles(path, model)
+
+    def _resolve_tile_size(self, model: BaseModel | None) -> int:
+        """Return the tile size to use, taken from the model's input resolution.
+
+        Raises:
+            ValueError: If *model* is missing or does not expose an ``input_shape``.
+        """
+        if model is None:
+            raise ValueError("Se ha intentado procesar un TiledImageSource sin modelo: no se conoce el tile size")
+        if not hasattr(model, "input_shape"):
+            raise ValueError(
+                "Se ha intentado procesar un TiledImageSource con un modelo sin input_shape: no se conoce el tile size"
+            )
+        return model.input_shape
+
+    def _resized_size(self, orig_w: int, orig_h: int) -> tuple[int, int]:
+        """Return the in-memory ``(width, height)`` an image is downscaled to before tiling."""
+        return (
+            max(1, round(orig_w * self.RESIZE_FACTOR)),
+            max(1, round(orig_h * self.RESIZE_FACTOR)),
+        )
 
     def _iter_image_tiles(self, path: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
         """Downscale *path* by :attr:`RESIZE_FACTOR` and split it into a tile grid."""
+        tile_size = self._resolve_tile_size(model)
         image_path = str(path)
         with Image.open(path) as img:
             img = img.convert("RGB")
             orig_w, orig_h = img.size
-            resized_w = max(1, round(orig_w * self.RESIZE_FACTOR))
-            resized_h = max(1, round(orig_h * self.RESIZE_FACTOR))
+            resized_w, resized_h = self._resized_size(orig_w, orig_h)
             resized = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
             resized_arr = np.asarray(resized).copy()
 
-        if model is None: raise Exception("Se ha intentado procesar un TiledImageSource sin modelo: no se conoce el tile size")
-        if not hasattr(model, "input_shape"): raise Exception("Se ha intentado procesar un TiledImageSource con un modelo sin input_shape: no se conoce el tile size")
-
-        logger.debug(
-            f"Tiling '{image_path}': {orig_w}x{orig_h} -> {resized_w}x{resized_h}, "
-            f"tile_size={model.input_shape}"
-        )
-        for y0 in range(0, resized_h, model.input_shape):
-            y1 = min(y0 + model.input_shape, resized_h)
-            for x0 in range(0, resized_w, model.input_shape):
-                x1 = min(x0 + model.input_shape, resized_w)
+        logger.debug(f"Tiling '{image_path}': {orig_w}x{orig_h} -> {resized_w}x{resized_h}, tile_size={tile_size}")
+        for y0 in range(0, resized_h, tile_size):
+            y1 = min(y0 + tile_size, resized_h)
+            for x0 in range(0, resized_w, tile_size):
+                x1 = min(x0 + tile_size, resized_w)
                 tile = resized_arr[y0:y1, x0:x1].copy()
                 unit_id = f"{image_path}{_TILE_MARKER}{x0}_{y0}_{x1}_{y1}"
                 yield ScanUnit(id=unit_id, group_key=image_path, inference_input=tile)
 
-    def process_batch(
-        self, model: BaseModel, batch: list[ScanUnit]
-    ) -> list[list[tuple[Prediction, list[float]]]]:
+    def process_batch(self, model: BaseModel, batch: list[ScanUnit]) -> list[list[tuple[Prediction, list[float]]]]:
         """Run *model* over a batch of tiles, translating bboxes back to source-image space.
 
-        Overrides the default implementation because only this source knows each tile's
-        offset within its resized source image (and the resize factor applied), needed to
-        turn a tile-local bbox into a bbox that means something against the original file
-        on disk.
+        Overrides the default implementation because only this source knows each tile's offset within its resized source
+        image (and the resize factor applied), needed to turn a tile-local bbox into a bbox that means something against
+        the original file on disk.
         """
         inputs = [unit.inference_input for unit in batch]
         embeddings, predictions = model.get_batch_embeddings(inputs)
