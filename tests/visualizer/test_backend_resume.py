@@ -13,15 +13,19 @@ import pytest
 import torch
 from fastapi import HTTPException
 
+from visualizer.backend import dataset_inference_jobs as jobs_module
 from visualizer.backend.app import JobRequest, check_dataset, create_job
+from visualizer.backend.dataset_inference_jobs import (
+    DATASET_INFERENCE_JOB_STORE,
+    DatasetInferenceJobStatus,
+    run_dataset_inference_job,
+)
+from visualizer.backend.dataset_inference_store import DB_FILENAME, DatasetInferenceStore
 from visualizer.backend.datasets.basedataset import Split
 from visualizer.backend.datasets.cocodetectiondataset import COCODetectionDataset
-from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus, run_job
 from visualizer.backend.models.basemodel import BaseModel
-from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import MODEL_REGISTRY
-from visualizer.backend.dataset_inference_store import DB_FILENAME, DatasetInferenceStore
-from visualizer.backend import jobs as jobs_module
+from visualizer.backend.shared_types.prediction import Prediction
 
 
 class FakeModel(BaseModel):
@@ -51,13 +55,13 @@ class FakeModel(BaseModel):
 
 @pytest.fixture(autouse=True)
 def _reset_visualizer_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    JOB_STORE.clear()
-    jobs_module._ACTIVE_JOB_IDS_BY_PATH.clear()
+    DATASET_INFERENCE_JOB_STORE.clear()
+    jobs_module._ACTIVE_DATASET_INFERENCE_JOB_IDS_BY_PATH.clear()
     FakeModel.calls.clear()
     monkeypatch.setitem(MODEL_REGISTRY, "fake_model", FakeModel)
     yield
-    JOB_STORE.clear()
-    jobs_module._ACTIVE_JOB_IDS_BY_PATH.clear()
+    DATASET_INFERENCE_JOB_STORE.clear()
+    jobs_module._ACTIVE_DATASET_INFERENCE_JOB_IDS_BY_PATH.clear()
     MODEL_REGISTRY.pop("fake_model", None)
     FakeModel.calls.clear()
 
@@ -184,7 +188,7 @@ def test_run_job_resume_skips_processed_images_and_preserves_counters(tmp_path: 
     store.set_meta("num_images_total", 3)
 
     job = DatasetInferenceJobStatus(id="resume-job", store=store, categories={1: "object"})
-    run_job(job, dataset, model, [Split.VAL], batch_size=2, iou_threshold=0.5, resume=True)
+    run_dataset_inference_job(job, dataset, model, [Split.VAL], batch_size=2, iou_threshold=0.5, resume=True)
 
     flattened_calls = [image_name for batch in FakeModel.calls for image_name in batch]
     assert job.status == "done"
@@ -318,8 +322,8 @@ def test_create_job_resume_reattaches_to_existing_active_job(tmp_path: Path) -> 
         num_images_total=3,
         num_images_processed=1,
     )
-    JOB_STORE[active_job.id] = active_job
-    assert jobs_module.try_register_active_job(tmp_path, active_job.id) is None
+    DATASET_INFERENCE_JOB_STORE[active_job.id] = active_job
+    assert jobs_module.try_register_active_dataset_inference_job(tmp_path, active_job.id) is None
 
     response = create_job(_default_request(tmp_path, model_path, resume=True))
 

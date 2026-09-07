@@ -433,6 +433,7 @@ export default function VisualizerPage() {
                 },
                 ground_truth: null,
                 status: "tp",
+                iou: 0
               },
             ]
             : []

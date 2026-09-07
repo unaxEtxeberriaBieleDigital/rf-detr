@@ -41,6 +41,7 @@ PROGRESS_SCHEMA_VERSION = 1
 _PCA_BATCH_SIZE = 10_000
 
 
+# TODO: Quitar la migración y ponerlo todo en el esquema inicial
 class DatasetInferenceStore:
     """Wraps a single SQLite database file for one visualizer  dataset inference job.
 
@@ -102,6 +103,7 @@ class DatasetInferenceStore:
                     gt_y1           REAL,
                     gt_x2           REAL,
                     gt_y2           REAL,
+                    iou             REAL,
                     raw_embedding   TEXT,
                     pca_embedding   TEXT,
                     pca_components  INTEGER
@@ -136,6 +138,19 @@ class DatasetInferenceStore:
                     ON evaluation_cache (dataset_inference_job_id, dataset_type);
                 """
             )
+        self._migrate_schema()
+
+    def _migrate_schema(self) -> None:
+        """Add columns introduced after a DB was first created (idempotent).
+
+        ``CREATE TABLE IF NOT EXISTS`` leaves already-existing tables untouched, so
+        databases written by earlier versions need new columns added explicitly.
+        """
+        with self._write_lock, self._connect() as conn:
+            existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(records)")}
+            if existing_columns and "iou" not in existing_columns:
+                conn.execute("ALTER TABLE records ADD COLUMN iou REAL")
+                logger.info("Migrated records table: added 'iou' column to %s", self.db_path)
 
     # ------------------------------------------------------------------
     # Metadata
@@ -157,6 +172,10 @@ class DatasetInferenceStore:
     def get_meta(self, key: str, default: Any = None) -> Any:
         """Return the deserialised value for *key*, or *default* if absent.
 
+        Databases written before the metadata table was renamed are read from the
+        legacy ``job_meta`` table so they stay inspectable (for example to report
+        the progress of a run that cannot be resumed).
+
         Args:
             key: Metadata key string.
             default: Value to return when the key does not exist.
@@ -165,10 +184,26 @@ class DatasetInferenceStore:
             Deserialised JSON value, or *default*.
         """
         with self._connect() as conn:
+            table_name = self._meta_table_name(conn)
+            if table_name is None:
+                return default
             row = conn.execute(
-                "SELECT value FROM dataset_inference_job_meta WHERE key = ?", (key,)
+                f"SELECT value FROM {table_name} WHERE key = ?",
+                (key,),
             ).fetchone()
         return json.loads(row["value"]) if row else default
+
+    @staticmethod
+    def _meta_table_name(conn: sqlite3.Connection) -> str | None:
+        """Return the metadata table present in this DB, or None when absent."""
+        for candidate in ("dataset_inference_job_meta", "job_meta"):
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (candidate,),
+            ).fetchone()
+            if row is not None:
+                return candidate
+        return None
 
     def set_run_config(self, config: dict[str, Any]) -> None:
         """Persist the normalized run configuration used for resume validation.
@@ -245,7 +280,7 @@ class DatasetInferenceStore:
                 """
                 SELECT metric_name, metric_value, calculated_at
                 FROM evaluation_cache
-                WHERE inference_id = ? AND dataset_type = ?
+                WHERE dataset_inference_job_id = ? AND dataset_type = ?
                 ORDER BY metric_name
                 """,
                 (dataset_inference_job_id, dataset_type),
@@ -273,7 +308,10 @@ class DatasetInferenceStore:
         """
         with self._write_lock, self._connect() as conn:
             if dataset_type is None:
-                conn.execute("DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ?", (dataset_inference_job_id,))
+                conn.execute(
+                    "DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ?",
+                    (dataset_inference_job_id,),
+                )
             else:
                 conn.execute(
                     "DELETE FROM evaluation_cache WHERE dataset_inference_job_id = ? AND dataset_type = ?",
@@ -326,6 +364,7 @@ class DatasetInferenceStore:
                     gt.bbox[1] if gt and gt.bbox else None,
                     gt.bbox[2] if gt and gt.bbox else None,
                     gt.bbox[3] if gt and gt.bbox else None,
+                    r.iou,
                     json.dumps(r.embedding) if r.embedding else None,
                 )
             )
@@ -338,8 +377,9 @@ class DatasetInferenceStore:
                  pred_x1, pred_y1, pred_x2, pred_y2,
                  gt_class_id, gt_confidence,
                  gt_x1, gt_y1, gt_x2, gt_y2,
+                 iou,
                  raw_embedding)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 rows,
             )
@@ -382,6 +422,7 @@ class DatasetInferenceStore:
                     ground_truth.bbox[1] if ground_truth and ground_truth.bbox else None,
                     ground_truth.bbox[2] if ground_truth and ground_truth.bbox else None,
                     ground_truth.bbox[3] if ground_truth and ground_truth.bbox else None,
+                    record.iou,
                     json.dumps(record.embedding) if record.embedding else None,
                 )
             )
@@ -396,8 +437,9 @@ class DatasetInferenceStore:
                      pred_x1, pred_y1, pred_x2, pred_y2,
                      gt_class_id, gt_confidence,
                      gt_x1, gt_y1, gt_x2, gt_y2,
+                     iou,
                      raw_embedding)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     record_rows,
                 )
@@ -459,14 +501,10 @@ class DatasetInferenceStore:
         if algorithm == "tsne":
             return self._compute_tsne(components, record_ids=record_ids, perplexity=perplexity)
         if algorithm == "umap":
-            return self._compute_umap(
-                components, record_ids=record_ids, n_neighbors=n_neighbors, min_dist=min_dist
-            )
+            return self._compute_umap(components, record_ids=record_ids, n_neighbors=n_neighbors, min_dist=min_dist)
         raise ValueError(f"Unknown algorithm {algorithm!r}. Choose 'pca', 'tsne', or 'umap'.")
 
-    def _load_all_embeddings(
-        self, record_ids: list[str] | None = None
-    ) -> tuple[list[str], np.ndarray]:
+    def _load_all_embeddings(self, record_ids: list[str] | None = None) -> tuple[list[str], np.ndarray]:
         """Load all raw embeddings (or a filtered subset) into a numpy array.
 
         Batch algorithms (t-SNE, UMAP) need all data in memory.  For large
@@ -482,9 +520,7 @@ class DatasetInferenceStore:
             Tuple of (list of record ids, float32 matrix of shape (n, 512)).
         """
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, raw_embedding FROM records WHERE raw_embedding IS NOT NULL"
-            ).fetchall()
+            rows = conn.execute("SELECT id, raw_embedding FROM records WHERE raw_embedding IS NOT NULL").fetchall()
         if record_ids is not None:
             id_set = set(record_ids)
             rows = [r for r in rows if r["id"] in id_set]
@@ -492,9 +528,7 @@ class DatasetInferenceStore:
         vecs = np.array([json.loads(r["raw_embedding"]) for r in rows], dtype=np.float32)
         return ids, vecs
 
-    def _save_reduction_coords(
-        self, ids: list[str], coords: np.ndarray, n_components: int
-    ) -> int:
+    def _save_reduction_coords(self, ids: list[str], coords: np.ndarray, n_components: int) -> int:
         """Persist reduced coordinates to the ``pca_embedding`` column.
 
         Args:
@@ -505,10 +539,7 @@ class DatasetInferenceStore:
         Returns:
             Number of rows updated.
         """
-        rows = [
-            (json.dumps(coord.tolist()), n_components, rid)
-            for rid, coord in zip(ids, coords)
-        ]
+        rows = [(json.dumps(coord.tolist()), n_components, rid) for rid, coord in zip(ids, coords)]
         with self._write_lock, self._connect() as conn:
             conn.executemany(
                 "UPDATE records SET pca_embedding=?, pca_components=? WHERE id=?",
@@ -539,10 +570,7 @@ class DatasetInferenceStore:
         from sklearn.manifold import TSNE  # soft import – sklearn is always present
 
         label = f"subset of {len(record_ids)}" if record_ids is not None else "all"
-        logger.info(
-            f"[store] starting t-SNE (components={components}, "
-            f"perplexity={perplexity}, records={label}) ..."
-        )
+        logger.info(f"[store] starting t-SNE (components={components}, perplexity={perplexity}, records={label}) ...")
         ids, vecs = self._load_all_embeddings(record_ids)
         if len(ids) == 0:
             logger.warning("[store] no embeddings found – t-SNE skipped")
@@ -586,10 +614,7 @@ class DatasetInferenceStore:
         try:
             import umap as umap_lib  # type: ignore[import-untyped]
         except ImportError as exc:
-            raise RuntimeError(
-                "umap-learn is required for UMAP. "
-                "Install it with: pip install umap-learn"
-            ) from exc
+            raise RuntimeError("umap-learn is required for UMAP. Install it with: pip install umap-learn") from exc
 
         label = f"subset of {len(record_ids)}" if record_ids is not None else "all"
         logger.info(
@@ -644,7 +669,7 @@ class DatasetInferenceStore:
                 logger.warning("[store] record_ids list is empty – PCA skipped")
                 return 0
             placeholders = ",".join("?" * len(record_ids))
-            id_filter = f" AND id IN ({placeholders})"  # noqa: S608
+            id_filter = f" AND id IN ({placeholders})"
             id_params = list(record_ids)
 
         label = f"subset of {len(record_ids)}" if record_ids is not None else "all"
@@ -652,7 +677,7 @@ class DatasetInferenceStore:
 
         with self._connect() as conn:
             total = conn.execute(
-                f"SELECT COUNT(*) FROM records WHERE raw_embedding IS NOT NULL{id_filter}",  # noqa: S608
+                f"SELECT COUNT(*) FROM records WHERE raw_embedding IS NOT NULL{id_filter}",
                 id_params,
             ).fetchone()[0]
 
@@ -681,10 +706,7 @@ class DatasetInferenceStore:
             if not ids:
                 break
             coords = ipca.transform(np.array(vecs, dtype=np.float32))
-            rows = [
-                (json.dumps(coord.tolist()), n_components, rid)
-                for rid, coord in zip(ids, coords)
-            ]
+            rows = [(json.dumps(coord.tolist()), n_components, rid) for rid, coord in zip(ids, coords)]
             with self._write_lock, self._connect() as conn:
                 conn.executemany(
                     "UPDATE records SET pca_embedding=?, pca_components=? WHERE id=?",
@@ -719,9 +741,7 @@ class DatasetInferenceStore:
         params += [limit, offset]
         with self._connect() as conn:
             rows = conn.execute(
-                f"SELECT id, raw_embedding FROM records "  # noqa: S608
-                f"WHERE raw_embedding IS NOT NULL{id_filter} "
-                "LIMIT ? OFFSET ?",
+                f"SELECT id, raw_embedding FROM records WHERE raw_embedding IS NOT NULL{id_filter} LIMIT ? OFFSET ?",
                 params,
             ).fetchall()
         ids = [r["id"] for r in rows]
@@ -748,9 +768,7 @@ class DatasetInferenceStore:
             Boolean indicating reduction availability.
         """
         with self._connect() as conn:
-            n = conn.execute(
-                "SELECT COUNT(*) FROM records WHERE pca_embedding IS NOT NULL"
-            ).fetchone()[0]
+            n = conn.execute("SELECT COUNT(*) FROM records WHERE pca_embedding IS NOT NULL").fetchone()[0]
         return n > 0
 
     def dimensionality_reduction_components(self) -> int | None:
@@ -760,10 +778,7 @@ class DatasetInferenceStore:
             Integer dimension count, or None if no reduction has been computed.
         """
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT pca_components FROM records "
-                "WHERE pca_components IS NOT NULL LIMIT 1"
-            ).fetchone()
+            row = conn.execute("SELECT pca_components FROM records WHERE pca_components IS NOT NULL LIMIT 1").fetchone()
         return row[0] if row else None
 
     def processed_image_count(self, split_names: list[str] | None = None) -> int:
@@ -782,7 +797,7 @@ class DatasetInferenceStore:
         params: list[Any] = []
         if split_names:
             placeholders = ",".join("?" * len(split_names))
-            sql += f" WHERE split IN ({placeholders})"  # noqa: S608
+            sql += f" WHERE split IN ({placeholders})"
             params.extend(split_names)
 
         with self._connect() as conn:
@@ -804,7 +819,7 @@ class DatasetInferenceStore:
         params: list[Any] = []
         if split_names:
             placeholders = ",".join("?" * len(split_names))
-            sql += f" WHERE split IN ({placeholders})"  # noqa: S608
+            sql += f" WHERE split IN ({placeholders})"
             params.extend(split_names)
 
         with self._connect() as conn:
@@ -832,7 +847,7 @@ class DatasetInferenceStore:
             List of record dicts matching :class:`EmbeddingRecordDTO` shape.
         """
         where, params = _build_where(split=split, status=status, class_id=class_id)
-        sql = f"SELECT * FROM records{where} LIMIT ? OFFSET ?"  # noqa: S608
+        sql = f"SELECT * FROM records{where} LIMIT ? OFFSET ?"
         params += [limit, offset]
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -855,11 +870,8 @@ class DatasetInferenceStore:
             Tuple of (list of image path strings, total distinct path count).
         """
         where, params = _build_where(split=split)
-        count_sql = f"SELECT COUNT(DISTINCT image_path) FROM records{where}"  # noqa: S608
-        page_sql = (
-            f"SELECT DISTINCT image_path FROM records{where} "  # noqa: S608
-            "ORDER BY image_path LIMIT ? OFFSET ?"
-        )
+        count_sql = f"SELECT COUNT(DISTINCT image_path) FROM records{where}"
+        page_sql = f"SELECT DISTINCT image_path FROM records{where} ORDER BY image_path LIMIT ? OFFSET ?"
         with self._connect() as conn:
             total = conn.execute(count_sql, params).fetchone()[0]
             rows = conn.execute(page_sql, params + [limit, offset]).fetchall()
@@ -883,7 +895,7 @@ class DatasetInferenceStore:
         if not image_paths:
             return []
         placeholders = ",".join("?" * len(image_paths))
-        sql = f"SELECT * FROM records WHERE image_path IN ({placeholders})"  # noqa: S608
+        sql = f"SELECT * FROM records WHERE image_path IN ({placeholders})"
         params: list[Any] = list(image_paths)
         if split is not None:
             sql += " AND LOWER(split) = LOWER(?)"
@@ -907,7 +919,7 @@ class DatasetInferenceStore:
 
         Returns:
             List of dictionaries with record id, status, predicted
-            class/confidence and ground-truth class.
+            class/confidence, ground-truth class and the pairing IoU.
         """
         if record_ids is not None and not record_ids:
             return []
@@ -923,7 +935,8 @@ class DatasetInferenceStore:
                     pred_x1, pred_y1, pred_x2, pred_y2,
                     gt_class_id,
                     gt_confidence,
-                    gt_x1, gt_y1, gt_x2, gt_y2
+                    gt_x1, gt_y1, gt_x2, gt_y2,
+                    iou
                 FROM records
                 """
             ).fetchall()
@@ -942,9 +955,7 @@ class DatasetInferenceStore:
             Absolute image path string, or None if the record doesn't exist.
         """
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT image_path FROM records WHERE id = ?", (record_id,)
-            ).fetchone()
+            row = conn.execute("SELECT image_path FROM records WHERE id = ?", (record_id,)).fetchone()
         return row["image_path"] if row else None
 
     def get_raw_embedding(self, record_id: str) -> list[float] | None:
@@ -962,9 +973,7 @@ class DatasetInferenceStore:
             exist or has no stored embedding (e.g. false negatives).
         """
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT raw_embedding FROM records WHERE id = ?", (record_id,)
-            ).fetchone()
+            row = conn.execute("SELECT raw_embedding FROM records WHERE id = ?", (record_id,)).fetchone()
         if row is None or row["raw_embedding"] is None:
             return None
         return json.loads(row["raw_embedding"])
@@ -1041,9 +1050,7 @@ def _row_to_dto(row: sqlite3.Row) -> dict:
             "class_id": row["pred_class_id"],
             "confidence": row["pred_confidence"],
             "bbox": (
-                [row["pred_x1"], row["pred_y1"], row["pred_x2"], row["pred_y2"]]
-                if row["pred_x1"] is not None
-                else None
+                [row["pred_x1"], row["pred_y1"], row["pred_x2"], row["pred_y2"]] if row["pred_x1"] is not None else None
             ),
         }
 
@@ -1052,11 +1059,7 @@ def _row_to_dto(row: sqlite3.Row) -> dict:
         ground_truth = {
             "class_id": row["gt_class_id"],
             "confidence": row["gt_confidence"],
-            "bbox": (
-                [row["gt_x1"], row["gt_y1"], row["gt_x2"], row["gt_y2"]]
-                if row["gt_x1"] is not None
-                else None
-            ),
+            "bbox": ([row["gt_x1"], row["gt_y1"], row["gt_x2"], row["gt_y2"]] if row["gt_x1"] is not None else None),
         }
 
     # Return reduced coords if available, otherwise the raw embedding.
@@ -1074,4 +1077,5 @@ def _row_to_dto(row: sqlite3.Row) -> dict:
         "embedding": embedding,
         "prediction": prediction,
         "ground_truth": ground_truth,
+        "iou": row["iou"],
     }

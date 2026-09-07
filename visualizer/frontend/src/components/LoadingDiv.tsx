@@ -11,6 +11,7 @@ export default function LoadingDiv( ) {
             height: "100%",
             width: "100%",
             textAlign: "center",
+            borderRadius: "300px",
         }}
     >
         <Beams

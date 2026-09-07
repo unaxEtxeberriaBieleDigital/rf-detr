@@ -30,6 +30,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.api.schemas import (
     CheckDatasetResponse,
@@ -48,9 +49,6 @@ from visualizer.backend.api.schemas import (
     SemanticSearchResultDTO,
     SemanticSearchStatusResponse,
 )
-from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
-from visualizer.backend.datasets.basedataset import Split
-from visualizer.backend.evaluation.types import Match
 from visualizer.backend.dataset_inference_jobs import (
     DATASET_INFERENCE_JOB_STORE,
     DatasetInferenceJobStatus,
@@ -58,14 +56,17 @@ from visualizer.backend.dataset_inference_jobs import (
     run_dataset_inference_job,
     try_register_active_dataset_inference_job,
 )
+from visualizer.backend.dataset_inference_store import DatasetInferenceStore
+from visualizer.backend.datasets import cocodetectiondataset  # noqa: F401
+from visualizer.backend.datasets.basedataset import Split
+from visualizer.backend.evaluation.types import Match
 from visualizer.backend.metrics import get_metrics_for_dataset
 from visualizer.backend.models import rfdetr  # noqa: F401
-from visualizer.backend.shared_types.prediction import Prediction
 from visualizer.backend.registry import DATASET_REGISTRY, MODEL_REGISTRY, SEMANTIC_SEARCH_SOURCE_REGISTRY
 from visualizer.backend.semantic_search import SEARCH_JOB_STORE, SearchJob, run_semantic_search
 from visualizer.backend.semantic_search import sources as semantic_search_sources  # noqa: F401
 from visualizer.backend.semantic_search.sources.basesource import BaseSemanticSearchSource
-from visualizer.backend.dataset_inference_store import DatasetInferenceStore
+from visualizer.backend.shared_types.prediction import Prediction
 
 logger = get_logger()
 
@@ -333,7 +334,8 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
     if not DatasetInferenceStore.db_exists(request.dataset_path):
         raise HTTPException(
             404,
-            f"No existing DB found at '{request.dataset_path}'. Run inference first via POST /api/v1/dataset_inference_jobs.",
+            f"No existing DB found at '{request.dataset_path}'. "
+            "Run inference first via POST /api/v1/dataset_inference_jobs.",
         )
 
     store = DatasetInferenceStore(request.dataset_path)
@@ -582,9 +584,7 @@ def post_job_evaluation(
     request: EvaluationRequest,
 ) -> EvaluationMetricsResponse:
     """Compute evaluation metrics from filters sent in a JSON request body."""
-    class_thresholds = (
-        json.dumps(request.class_thresholds) if request.class_thresholds is not None else None
-    )
+    class_thresholds = json.dumps(request.class_thresholds) if request.class_thresholds is not None else None
     record_ids = json.dumps(request.record_ids) if request.record_ids is not None else None
     return _calculate_job_evaluation(job_id, class_thresholds, record_ids)
 
@@ -766,9 +766,10 @@ def get_semantic_search(job_id: str, search_id: str) -> SemanticSearchStatusResp
     search_job = _get_search_job_or_404(search_id)
     return _search_job_to_response(search_job, include_results=True)
 
+
 @app.delete(
-        "/api/v1/dataset_inference_jobs/{job_id}/semantic-search/{search_id}",
-        response_model=dict,
+    "/api/v1/dataset_inference_jobs/{job_id}/semantic-search/{search_id}",
+    response_model=dict,
 )
 def cancel_semantic_search(job_id: str, search_id: str) -> dict:
     _get_job_or_404(job_id)
@@ -780,8 +781,9 @@ def cancel_semantic_search(job_id: str, search_id: str) -> dict:
     search_job.status = "cancelled"
 
     logger.info(f"Requested cancellation for semantic search {search_id} in job {job_id}")
-    
+
     return {"message": "Cancellation requested", "search_id": search_id, "status": "cancelled"}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -941,6 +943,7 @@ def _row_to_match(row: dict[str, Any]) -> Match:
         embedding=None,
         ground_truth=ground_truth,
         status=str(row["status"]),
+        iou=None if row["iou"] is None else float(row["iou"]),
     )
 
 
@@ -1112,7 +1115,6 @@ def _search_job_to_response(search_job: SearchJob, include_results: bool = False
     results = []
 
     for r in search_job.results:
-
         try:
             preview = source.render_result_preview(r)
         except FileNotFoundError as e:

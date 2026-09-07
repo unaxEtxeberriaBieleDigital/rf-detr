@@ -15,7 +15,18 @@ from visualizer.backend.metrics.base_metrics import (
     MetricValue,
 )
 
+# COCO evaluates AP/AR over IoU thresholds 0.50:0.05:0.95.
+_COCO_IOU_THRESHOLDS = np.linspace(0.5, 0.95, 10)
 
+# COCO interpolates the precision/recall curve over 101 evenly spaced recall levels.
+_COCO_RECALL_LEVELS = np.linspace(0.0, 1.0, 101)
+
+# Records written before the IoU column existed only know they cleared the matching
+# threshold, so they are scored at that threshold and no higher.
+_LEGACY_IOU = 0.5
+
+
+# TODO: Quitar referencias legacy
 class COCODetectionMetricsCalculator(MetricsCalculator):
     """Calculates evaluation metrics for COCO-format object detection.
 
@@ -145,15 +156,97 @@ class COCODetectionMetricsCalculator(MetricsCalculator):
         return [
             match
             for match in matches
-            if (
-                match.prediction is not None
-                and match.prediction.class_id == class_id
-            ) or (
-                match.prediction is None
-                and match.ground_truth is not None
-                and match.ground_truth.class_id == class_id
-            )
+            if (match.prediction is not None and match.prediction.class_id == class_id)
+            or (match.prediction is None and match.ground_truth is not None and match.ground_truth.class_id == class_id)
         ]
+
+    @staticmethod
+    def _average_precision(is_true_positive: np.ndarray, num_ground_truths: int) -> float:
+        """Return 101-point interpolated average precision for one class.
+
+        Args:
+            is_true_positive: Binary flags for detections already sorted by descending
+                confidence, where 1 marks a true positive.
+            num_ground_truths: Number of ground-truth boxes for the class.
+
+        Returns:
+            Average precision in ``[0, 1]``.
+        """
+        if num_ground_truths == 0 or is_true_positive.size == 0:
+            return 0.0
+
+        cumulative_true_positives = np.cumsum(is_true_positive)
+        cumulative_detections = np.arange(1, is_true_positive.size + 1)
+        precisions = cumulative_true_positives / cumulative_detections
+        recalls = cumulative_true_positives / num_ground_truths
+
+        # Make precision monotonically decreasing so each recall level uses the best
+        # precision achievable at or beyond it.
+        precisions = np.maximum.accumulate(precisions[::-1])[::-1]
+
+        interpolated = np.zeros_like(_COCO_RECALL_LEVELS)
+        insert_positions = np.searchsorted(recalls, _COCO_RECALL_LEVELS, side="left")
+        valid = insert_positions < precisions.size
+        interpolated[valid] = precisions[insert_positions[valid]]
+        return float(interpolated.mean())
+
+    def _mean_average_precision_recall(
+        self,
+        matches: list[Match],
+        iou_threshold: float,
+    ) -> tuple[float, float]:
+        """Return (mAP, mAR) across classes at one IoU threshold.
+
+        A detection counts as a true positive when it was paired with a ground truth of
+        the same class and that pairing's IoU clears *iou_threshold*. Because the
+        evaluator already enforces one-to-one greedy assignment, raising the threshold
+        only removes pairings, so ground-truth boxes are never double-counted.
+
+        Args:
+            matches: Detection matches to score.
+            iou_threshold: Minimum IoU for a pairing to count as a true positive.
+
+        Returns:
+            Tuple of ``(mean_average_precision, mean_average_recall)``.
+        """
+        average_precisions: list[float] = []
+        average_recalls: list[float] = []
+
+        for class_id in sorted(self.categories.keys()):
+            num_ground_truths = sum(
+                1 for match in matches if match.ground_truth is not None and match.ground_truth.class_id == class_id
+            )
+            if num_ground_truths == 0:
+                continue
+
+            class_detections = [
+                match for match in matches if match.prediction is not None and match.prediction.class_id == class_id
+            ]
+            class_detections.sort(
+                key=lambda match: match.prediction.confidence,  # type: ignore[union-attr]
+                reverse=True,
+            )
+
+            flags = np.array(
+                [
+                    1
+                    if (
+                        match.ground_truth is not None
+                        and match.ground_truth.class_id == class_id
+                        and (_LEGACY_IOU if match.iou is None else match.iou) >= iou_threshold
+                    )
+                    else 0
+                    for match in class_detections
+                ],
+                dtype=np.int64,
+            )
+
+            average_precisions.append(self._average_precision(flags, num_ground_truths))
+            average_recalls.append(float(flags.sum()) / num_ground_truths)
+
+        if not average_precisions:
+            return 0.0, 0.0
+        return float(np.mean(average_precisions)), float(np.mean(average_recalls))
 
     def calculate(
         self,
@@ -211,19 +304,20 @@ class COCODetectionMetricsCalculator(MetricsCalculator):
             num_classes = len(self.categories)
             metrics["confusion_matrix"] = [[0] * num_classes for _ in range(num_classes)]
 
-        # TODO: prepararlo para que se calculen bien, sin aproximaciones. Podrían meterse los IoU-s en la BD.
-        # mAP and mAR: simplified calculation
-        # For now, approximate using TP/FP/FN counts
-        # In production, this would use full COCO evaluation protocol
-        map50 = tp_count / (tp_count + fp_count + fn_count) if (tp_count + fp_count + fn_count) > 0 else 0.0
-        map50_90 = map50 * 0.95  # Approximate: slightly lower than single IoU
-        mar50 = tp_count / (tp_count + fn_count) if (tp_count + fn_count) > 0 else 0.0
-        mar50_90 = mar50 * 0.95
+        # mAP / mAR from the per-record IoU persisted by the evaluator, following the
+        # COCO protocol (per-class AP with 101-point interpolation, averaged over classes
+        # and over the IoU thresholds 0.50:0.05:0.95).
+        precision_by_threshold: list[float] = []
+        recall_by_threshold: list[float] = []
+        for iou_threshold in _COCO_IOU_THRESHOLDS:
+            mean_ap, mean_ar = self._mean_average_precision_recall(matches, float(iou_threshold))
+            precision_by_threshold.append(mean_ap)
+            recall_by_threshold.append(mean_ar)
 
-        metrics["mAP50"] = map50
-        metrics["mAP50:90"] = map50_90
-        metrics["mAR50"] = mar50
-        metrics["mAR50:90"] = mar50_90
+        metrics["mAP50"] = precision_by_threshold[0]
+        metrics["mAP50:90"] = float(np.mean(precision_by_threshold))
+        metrics["mAR50"] = recall_by_threshold[0]
+        metrics["mAR50:90"] = float(np.mean(recall_by_threshold))
 
         # ROC-AUC: confidence vs correct detection
         if matches:

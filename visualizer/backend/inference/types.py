@@ -32,7 +32,12 @@ class DatasetInferenceJobStatus:
 
 @dataclass
 class EmbeddingRecord:
-    """Persisted embedding, prediction, and ground-truth record."""
+    """Persisted embedding, prediction, and ground-truth record.
+
+    Attributes:
+        iou: Intersection-over-union of the resolved prediction/ground-truth
+            pairing, or ``None`` when the record has no pairing.
+    """
 
     id: str
     image_path: str
@@ -41,6 +46,7 @@ class EmbeddingRecord:
     prediction: Prediction | None
     ground_truth: Prediction | None
     status: Literal["tp", "fp", "fn", "misclassified", "correct", "incorrect"]
+    iou: float | None = None
 
 
 __all__ = ["DatasetInferenceJobState", "DatasetInferenceJobStatus", "EmbeddingRecord"]

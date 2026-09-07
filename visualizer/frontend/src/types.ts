@@ -14,6 +14,7 @@ export interface EmbeddingRecordDTO {
   prediction: PredictionDTO | null;
   ground_truth: PredictionDTO | null;
   status: RecordStatus;
+  iou: number | null;
 }
 
 export interface JobStatusResponse {

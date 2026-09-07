@@ -33,7 +33,8 @@ def match_detections(
         iou_threshold: Minimum IoU for a prediction/ground-truth pair to be considered a match.
 
     Returns:
-        One `Match` per prediction plus one `Match` per unmatched ground truth.
+        One `Match` per prediction plus one `Match` per unmatched ground truth. Matched
+        pairs carry the IoU that produced the pairing; unpaired records carry ``None``.
     """
     matches: list[Match] = []
     matched_gt_indices: set[int] = set()
@@ -66,7 +67,7 @@ def match_detections(
             matched_gt_indices.add(best_gt_idx)
             ground_truth = ground_truths[best_gt_idx]
             status = "tp" if ground_truth.class_id == prediction.class_id else "misclassified"
-            matches.append(Match(prediction, embedding, ground_truth, status))
+            matches.append(Match(prediction, embedding, ground_truth, status, iou=float(best_iou.item())))
         else:
             matches.append(Match(prediction, embedding, None, "fp"))
 

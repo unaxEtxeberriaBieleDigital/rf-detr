@@ -11,17 +11,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from visualizer.backend.app import app
-from visualizer.backend.inference.types import EmbeddingRecord
-from visualizer.backend.jobs import JOB_STORE, DatasetInferenceJobStatus
-from visualizer.backend.shared_types.prediction import Prediction
+from visualizer.backend.dataset_inference_jobs import DATASET_INFERENCE_JOB_STORE, DatasetInferenceJobStatus
 from visualizer.backend.dataset_inference_store import DatasetInferenceStore
+from visualizer.backend.inference.types import EmbeddingRecord
+from visualizer.backend.shared_types.prediction import Prediction
 
 
 @pytest.fixture(autouse=True)
 def _reset_visualizer_jobs() -> Iterator[None]:
-    JOB_STORE.clear()
+    DATASET_INFERENCE_JOB_STORE.clear()
     yield
-    JOB_STORE.clear()
+    DATASET_INFERENCE_JOB_STORE.clear()
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def finished_job(tmp_path: Path) -> DatasetInferenceJobStatus:
         status="done",
         categories={1: "cat", 2: "dog"},
     )
-    JOB_STORE[job.id] = job
+    DATASET_INFERENCE_JOB_STORE[job.id] = job
     return job
 
 
@@ -235,7 +235,10 @@ def test_evaluation_accepts_large_filter_payload_as_json_body(
     assert payload["metrics"]["precision"] == pytest.approx(1.0)
 
 
-def test_optimal_threshold_supports_predicted_class_scoping(client: TestClient, finished_job: DatasetInferenceJobStatus) -> None:
+def test_optimal_threshold_supports_predicted_class_scoping(
+    client: TestClient,
+    finished_job: DatasetInferenceJobStatus,
+) -> None:
     class_one_response = client.get(
         f"/api/v1/dataset_inference_jobs/{finished_job.id}/optimal-threshold",
         params={"metric": "f1", "num_thresholds": 11, "class_id": 1},
