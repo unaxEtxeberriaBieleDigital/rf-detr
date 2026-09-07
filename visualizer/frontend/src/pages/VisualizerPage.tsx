@@ -305,7 +305,6 @@ export default function VisualizerPage() {
       defs.push({
         id: "semantic-search",
         title: "Búsqueda Semántica",
-        closable: false,
         component: () => (
           <SemanticSearchPanel
             jobId={config.jobId}
