@@ -365,7 +365,10 @@ export default function FilterSidebar({
             value={filters.searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
-          <X />
+          <button type="button" className="fsb-reset" style={{display: 'flex', justifyContent: 'center', alignItems: 'center'}}
+            onClick={() => handleSearchChange("")} title={t("clear")}
+          >
+            <X color="white"/></button>
         </div>
       </Section>
 
