@@ -245,7 +245,7 @@ function SemanticSearchResults({
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0px 10px' }}>
             <p className="search-panel-summary">
-              Showing {Math.min(revealedCount, status.results?.length ?? 0)} of {status.results?.length ?? 0} found neighbours(s)
+              {t("showingNeighbours", { count1: Math.min(revealedCount, status.results?.length ?? 0), count2: status.results?.length ?? 0 })}
             </p>
             {isActive &&
               <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancel search</button>

@@ -315,7 +315,7 @@ export default function ImageViewerModal({
 
             <div className="iv-sidebar-section">
               <div className="iv-sidebar-title">Ground Truths ({gtCount})</div>
-              {gtCount === 0 && <p className="iv-empty">{t("noGroundTruth")}.</p>}
+              {gtCount === 0 && <p className="iv-empty">{t("noGroundTruth")}</p>}
               <ul className="iv-list">
                 {groundTruthRecords.map((r, i) => {
                   const classId = r.ground_truth?.class_id;

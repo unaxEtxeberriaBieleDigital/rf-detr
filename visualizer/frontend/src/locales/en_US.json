@@ -69,5 +69,6 @@
     "closeTab": "Close tab",
     "noSemanticSearchInProgress": "No semantic search in progress.",
     "searchSimilar": "Search similar",
-    "howToStartASemanticSearch": "Open an image from <gallery/>, select a detection, and click <search/> to start a search."
+    "howToStartASemanticSearch": "Open an image from <gallery/>, select a detection, and click <search/> to start a search.",
+    "showingNeighbours": "Showing {{count1}} of {{count2}} found neighbors."
 }
