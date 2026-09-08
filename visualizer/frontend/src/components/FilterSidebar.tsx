@@ -329,7 +329,7 @@ export default function FilterSidebar({
           type="button"
           className="visualizer-sidebar-close"
           onClick={() => setSidebarOpen(false)}
-          title={t("closePanel")}
+          title={t("closeSidebar")}
         >
           <PanelLeftClose size={20} />
         </button>

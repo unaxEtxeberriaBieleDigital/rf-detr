@@ -65,8 +65,8 @@ export default function MultiPanelLayout({
                   <button
                     className="close-button"
                     onClick={() => handleRemovePanel(panelDef.id)}
-                    title={t("closePanel")}
-                    aria-label={t("closePanel")}
+                    title={t("closeTab")}
+                    aria-label={t("closeTab")}
                   >
                     ✕
                   </button>

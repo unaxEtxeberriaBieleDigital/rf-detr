@@ -217,13 +217,14 @@ function SemanticSearchResults({
               />
             </div>
             <p className="ss-progress-label">
-              {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
+              {status.status === "pending" && status.num_images_total === 0 && t("preparingSearch")}
               {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
                 `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} ${t("scannedImages")} (${progressPct}%)`}
               {status.status === "done" &&
-                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} ${t("scannedImages")}`}
+                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} ${t("scannedImages")} (${progressPct}%)`}
               {status.status === "cancelled" &&
-                `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
+                t("searchCancelled", { scannedImages: status.num_images_processed.toLocaleString(), totalImages: status.num_images_total.toLocaleString() })
+              }
             </p>
           </div>
         </div>
@@ -234,11 +235,7 @@ function SemanticSearchResults({
       )}
 
       {status && status.status === "done" && (
-        <p className="ss-status-done search-panel-status-message">✓ Búsqueda finalizada correctamente.</p>
-      )}
-
-      {status && status.status === "cancelled" && (
-        <p className="setup-error">Búsqueda cancelada por el usuario.</p>
+        <p className="ss-status-done search-panel-status-message">✓ {t("searchCompletedSuccessfully")}</p>
       )}
 
       {status && (
@@ -248,8 +245,11 @@ function SemanticSearchResults({
               {t("showingNeighbours", { count1: Math.min(revealedCount, status.results?.length ?? 0), count2: status.results?.length ?? 0 })}
             </p>
             {isActive &&
-              <button onClick={() => cancelSemanticSearch(jobId, searchId)}>Cancel search</button>
+              <button onClick={() => cancelSemanticSearch(jobId, searchId)}>{t("cancelSearch")}</button>
             }
+            {status && status.status === "cancelled" && (
+              <p className="setup-error">{t("errors.searchCancelledByUser")}</p>
+            )}
           </div>
           <div className="search-panel-results" ref={resultsRef}>
             {(status.results ?? []).slice(0, revealedCount).map((r, i) => {

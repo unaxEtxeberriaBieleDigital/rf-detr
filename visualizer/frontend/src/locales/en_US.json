@@ -26,7 +26,8 @@
     "startingAppTextSlow": "Preparing the model and dependencies. Still starting up. {{elapsedTime}} seconds have elapsed.",
     "errors": {
         "connectionToBackendFail": "Could not connect to the backend",
-        "datasetInferenceJobFail": "Dataset inference job failed for unknown reason"
+        "datasetInferenceJobFail": "Dataset inference job failed for unknown reason",
+        "searchCancelledByUser": "Search cancelled by user."
     },
     "computingEmbeddingsAndPredictionsImages_one": "Computing embeddings and predictions: {{processedCount}}/{{totalCount}} image",
     "computingEmbeddingsAndPredictionsImages_other": "Computing embeddings and predictions: {{processedCount}}/{{totalCount}} images",
@@ -70,5 +71,10 @@
     "noSemanticSearchInProgress": "No semantic search in progress.",
     "searchSimilar": "Search similar",
     "howToStartASemanticSearch": "Open an image from <gallery/>, select a detection, and click <search/> to start a search.",
-    "showingNeighbours": "Showing {{count1}} of {{count2}} found neighbors."
+    "showingNeighbours": "Showing {{count1}} of {{count2}} found neighbors.",
+    "searchCancelled": "Search canceled after scanning {{scannedImages}} / {{totalImages}} images.",
+    "cancelSearch": "Cancel search",
+    "searchCompletedSuccessfully": "Search completed successfully",
+    "preparingSearch": "Preparing search...",
+    "clear": "Clear"
 }

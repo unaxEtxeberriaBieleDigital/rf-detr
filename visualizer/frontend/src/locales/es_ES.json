@@ -26,7 +26,8 @@
     "startingAppTextSlow": "Preparando el modelo y las dependencias. Aún se está iniciando. Han transcurrido {{elapsedTime}} segundos.",
     "errors": {
         "connectionToBackendFail": "No se pudo conectar con el backend",
-        "datasetInferenceJobFail": "La inferencia del dataset ha fallado por una razón desconocida"
+        "datasetInferenceJobFail": "La inferencia del dataset ha fallado por una razón desconocida",
+        "searchCancelledByUser": "Búsqueda cancelada por el usuario."
     },
     "computingEmbeddingsAndPredictionsImages_one": "Calculando embeddings y predicciones: {{processedCount}}/{{totalCount}} imagen",
     "computingEmbeddingsAndPredictionsImages_other": "Calculando embeddings y predicciones: {{processedCount}}/{{totalCount}} imágenes",
@@ -70,5 +71,10 @@
     "noSemanticSearchInProgress": "No hay ninguna búsqueda semántica en ejecución.",
     "searchSimilar": "Buscar similares",
     "howToStartASemanticSearch": "Abre una imagen desde <gallery/>, selecciona una detección y pulsa <search/> para iniciar una búsqueda.",
-    "showingNeighbours": "Mostrando {{count1}} de {{count2}} vecinos encontrados."
+    "showingNeighbours": "Mostrando {{count1}} de {{count2}} vecinos encontrados.",
+    "searchCancelled": "Búsqueda cancelada tras escanear {{scannedImages}} / {{totalImages}} imágenes.",
+    "cancelSearch": "Cancelar búsqueda",
+    "searchCompletedSuccessfully": "Búsqueda finalizada correctamente",
+    "preparingSearch": "Preparando búsqueda...",
+    "clear": "Limpiar"
 }
