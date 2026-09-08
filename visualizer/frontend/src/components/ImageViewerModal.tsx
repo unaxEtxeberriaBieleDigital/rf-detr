@@ -4,6 +4,7 @@ import { getRecordImageUrl, startSemanticSearch } from "../api/client";
 import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 import PanZoomViewport, { type PanZoomHandle } from "./PanZoomViewport";
+import { useTranslation } from "react-i18next";
 
 interface ImageViewerModalProps {
   isOpen: boolean;
@@ -76,7 +77,7 @@ export default function ImageViewerModal({
   onClose,
 }: ImageViewerModalProps) {
   const panZoomRef = useRef<PanZoomHandle | null>(null);
-
+  const { t } = useTranslation();
   const [showGroundTruths, setShowGroundTruths] = useState(true);
   const [showPredictions, setShowPredictions] = useState(true);
 
@@ -220,7 +221,7 @@ export default function ImageViewerModal({
               checked={showGroundTruths}
               onChange={(e) => setShowGroundTruths(e.currentTarget.checked)}
             />
-            Ground Truth ({gtCount})
+            Ground Truths ({gtCount})
           </label>
           <label className="image-viewer-toggle">
             <input
@@ -228,7 +229,7 @@ export default function ImageViewerModal({
               checked={showPredictions}
               onChange={(e) => setShowPredictions(e.currentTarget.checked)}
             />
-            Prediction ({predCount})
+            {t("predictions")} ({predCount})
           </label>
           {gtCount === 0 && (
             <span
@@ -243,10 +244,10 @@ export default function ImageViewerModal({
             className="image-viewer-btn"
             onClick={() => panZoomRef.current?.reset()}
           >
-            Reset
+            {t("resetView")}
           </button>
           <button type="button" className="image-viewer-btn" onClick={onClose}>
-            Close
+            {t("close")}
           </button>
         </div>
 
@@ -285,18 +286,18 @@ export default function ImageViewerModal({
 
           <aside className="iv-sidebar">
             <div className="iv-sidebar-section">
-              <div className="iv-sidebar-title">Inner filter</div>
+              <div className="iv-sidebar-title">{t("confidenceFilter")}</div>
               <label className="iv-check-row">
                 <input
                   type="checkbox"
                   checked={useGlobalFilters}
                   onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
                 />
-                Use current filters ({minConfidence.toFixed(2)})
+                {t("useCurrentFilter")} ({minConfidence.toFixed(2)})
               </label>
               <div className="iv-conf-row">
                 <label htmlFor="iv-local-conf" className="iv-conf-label">
-                  Confianza mínima: {effectiveMinConfidence.toFixed(2)}
+                  {t("minConfidence")}: {effectiveMinConfidence.toFixed(2)}
                 </label>
                 <input
                   id="iv-local-conf"
@@ -313,8 +314,8 @@ export default function ImageViewerModal({
             </div>
 
             <div className="iv-sidebar-section">
-              <div className="iv-sidebar-title">Ground Truth ({gtCount})</div>
-              {gtCount === 0 && <p className="iv-empty">Sin anotaciones GT.</p>}
+              <div className="iv-sidebar-title">Ground Truths ({gtCount})</div>
+              {gtCount === 0 && <p className="iv-empty">{t("noGroundTruth")}.</p>}
               <ul className="iv-list">
                 {groundTruthRecords.map((r, i) => {
                   const classId = r.ground_truth?.class_id;
@@ -332,8 +333,8 @@ export default function ImageViewerModal({
             </div>
 
             <div className="iv-sidebar-section">
-              <div className="iv-sidebar-title">Predictions ({predCount})</div>
-              {predCount === 0 && <p className="iv-empty">Sin predicciones por encima del umbral.</p>}
+              <div className="iv-sidebar-title">{t("predictions")} ({predCount})</div>
+              {predCount === 0 && <p className="iv-empty">{t("noPredictionAboveThreshold")}</p>}
               <ul className="iv-list">
                 {defectRecords.map((r) => {
                   const classId = r.prediction?.class_id;

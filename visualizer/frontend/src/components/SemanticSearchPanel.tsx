@@ -13,6 +13,7 @@ import type {
 import ImageTile from "./ImageTile";
 import ImageWithBoxes from "./ImageWithBoxes";
 import LoadingDiv from "./LoadingDiv";
+import { Trans, useTranslation } from "react-i18next";
 
 interface SemanticSearchPanelProps {
   jobId: string;
@@ -37,14 +38,20 @@ export default function SemanticSearchPanel({
   initialStatus,
   onOpenResult,
 }: SemanticSearchPanelProps) {
+  const { t } = useTranslation();
   if (!searchId) {
     return (
       <section className="visualizer-search-panel">
         <div className="search-panel-empty">
-          <h2>No hay ninguna búsqueda semántica en ejecución.</h2>
+          <h2>{t("noSemanticSearchInProgress")}</h2>
           <p>
-            Abre una imagen desde <strong>Image gallery</strong>, selecciona una detección y pulsa
-            <strong> Buscar similares</strong> para iniciar una búsqueda.
+            <Trans
+              i18nKey="howToStartASemanticSearch"
+              components={{
+                gallery: <strong>{t("imageGallery")}</strong>,
+                search: <strong>{t("searchSimilar")}</strong>,
+              }}
+            />
           </p>
         </div>
       </section>
@@ -79,6 +86,7 @@ function SemanticSearchResults({
   const pollRef = useRef<number | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (initialStatus?.id !== searchId) return;
@@ -184,7 +192,7 @@ function SemanticSearchResults({
       {error && <p className="setup-error">{error}</p>}
 
       {!error && !status &&
-          <LoadingDiv />
+        <LoadingDiv />
       }
 
       {status && status.status !== "error" && (
@@ -211,9 +219,9 @@ function SemanticSearchResults({
             <p className="ss-progress-label">
               {status.status === "pending" && status.num_images_total === 0 && "Preparando búsqueda..."}
               {(status.status === "running" || (status.status === "pending" && status.num_images_total > 0)) &&
-                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} scanned images (${progressPct}%)`}
+                `${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} ${t("scannedImages")} (${progressPct}%)`}
               {status.status === "done" &&
-                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} scanned images`}
+                `Búsqueda completada: ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} ${t("scannedImages")}`}
               {status.status === "cancelled" &&
                 `Búsqueda cancelada tras escanear ${status.num_images_processed.toLocaleString()} / ${status.num_images_total.toLocaleString()} imágenes`}
             </p>

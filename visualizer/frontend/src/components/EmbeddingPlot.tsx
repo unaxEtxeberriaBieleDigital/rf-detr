@@ -8,6 +8,7 @@ import Beams from "./DefaultBackground";
 import SegmentedControl from "./SegmentedControl";
 import "../styles/embeddingsPlot.css";
 import LoadingDiv from "./LoadingDiv";
+import { Trans, useTranslation } from "react-i18next";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -76,6 +77,8 @@ export default function EmbeddingPlot({
   onComputeReduction,
   onClearClusterSelection,
 }: EmbeddingPlotProps) {
+  const { t } = useTranslation();
+
   function resolveClassId(record: EmbeddingRecordDTO): number | null {
     if (record.ground_truth) return record.ground_truth.class_id;
     if (record.prediction) return record.prediction.class_id;
@@ -215,7 +218,7 @@ export default function EmbeddingPlot({
         onClick={onComputeReduction}
         disabled={reductionRunning}
       >
-        {reductionRunning ? "Computing..." : activePcaDims ? "Compute again" : "Compute"}
+        {reductionRunning ? t("computing") : activePcaDims ? t("computeAgain") : t("compute")}
       </button>
       {reductionError && <span className="pca-error">{reductionError}</span>}
 
@@ -251,7 +254,9 @@ export default function EmbeddingPlot({
           }}
         >
           <p>
-            Use the panel <strong>Compute</strong> to visualize the embeddings in the scatter plot.
+            <Trans i18nKey="embeddingPlotTip">
+              Use the panel <strong>Compute</strong> to visualize the embeddings in the scatter plot.
+            </Trans>
           </p>
         </div>
       </div>

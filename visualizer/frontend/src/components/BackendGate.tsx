@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { checkBackendHealth } from "../api/client";
 import Beams from "./DefaultBackground";
 import bieleLogo from "../assets/logos/biele-logo.png";
+import { useTranslation } from "react-i18next";
 
 const HEALTH_POLL_INTERVAL_MS = 600;
 /** After this long the message tells the user that the startup is taking a while. */
@@ -23,6 +24,7 @@ function sleep(ms: number): Promise<void> {
 export default function BackendGate({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [waitedMs, setWaitedMs] = useState(0);
+  const { t } = useTranslation();
 
   useEffect(() => {
     let cancelled = false;
@@ -66,11 +68,12 @@ export default function BackendGate({ children }: { children: ReactNode }) {
           <div className="backend-gate-center">
             <img src={bieleLogo} alt="Biele" className="beams-logo" />
             <div className="loader" />
-            <p className="backend-gate-title">Starting application...</p>
+            <p className="backend-gate-title">{t("startingApp")}</p>
             <p className="backend-gate-subtitle">
               {isSlow
-                ? `Preparing the model and the dependencies. Still starting up (${Math.round(waitedMs / 1000)} s).`
-                : "Preparing the model and the dependencies. This might take a few seconds."}
+                ? t("startingAppText")
+                : t("startingAppTextSlow", {elapsedTime: Math.round(waitedMs / 1000)})
+              }
             </p>
           </div>
         }

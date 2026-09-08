@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import LoadingDiv from "./LoadingDiv";
 import "../styles/evaluationPanel.css";
+import { useTranslation } from "react-i18next";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -61,6 +62,7 @@ export default function EvaluationPanel({
   const [optimizing, setOptimizing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState("f1");
+  const { t } = useTranslation();
 
   useEffect(() => {
     setLoading(true);
@@ -177,7 +179,7 @@ export default function EvaluationPanel({
           onClick={() => void handleRecalculateWithFilters()}
           disabled={refreshing}
         >
-          {refreshing ? "Recomputing..." : "Recompute with applied filters"}
+          {refreshing ? t("recomputing") : t("recomputeWithAppliedFilters")}
         </button>
         <label>Umbrales óptimos por clase (F1)</label>
         <div className="evaluation-panel__thresholds">

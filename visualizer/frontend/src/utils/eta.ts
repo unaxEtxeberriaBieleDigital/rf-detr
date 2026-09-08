@@ -1,3 +1,5 @@
+import { TFunction } from "i18next";
+
 /**
  * Helpers to estimate the remaining time of a long running, image-by-image job
  * (e.g. embedding extraction) from the progress samples the frontend polls.
@@ -60,8 +62,8 @@ export class EtaEstimator {
  * @param seconds Duration to format.
  * @returns Localized duration label (e.g. "2 min 05 s").
  */
-export function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "unos segundos";
+export function formatDuration(seconds: number, t: TFunction): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return t("fewSeconds");
 
   const totalSeconds = Math.round(seconds);
   if (totalSeconds < 60) return `${Math.max(totalSeconds, 1)} s`;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   type ReductionAlgorithm,
   computeReduction,
@@ -25,10 +25,11 @@ import type {
 import LoadingDiv from "../components/LoadingDiv";
 import { Funnel } from "lucide-react";
 import bieleLogo from "../assets/logos/biele-logo.png"
+import { useTranslation } from "react-i18next";
 
 export default function VisualizerPage() {
   const { config, setConfig, reset } = useAppConfig();
-
+  const { t } = useTranslation();
   const [records, setRecords] = useState<EmbeddingRecordDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -269,7 +270,7 @@ export default function VisualizerPage() {
     const defs: PanelDefinition[] = [
       {
         id: "gallery",
-        title: "Image gallery",
+        title: t("imageGallery"),
         component: () => (
           <ImageGallery
             jobId={config.jobId}
@@ -298,7 +299,7 @@ export default function VisualizerPage() {
       },
       {
         id: "embedding",
-        title: "Embedding plot",
+        title: t("embeddingPlot"),
         component: () => (
           <EmbeddingPlot
             records={plotRecords}
@@ -322,7 +323,7 @@ export default function VisualizerPage() {
       },
       {
         id: "evaluation",
-        title: "Model evaluation",
+        title: t("modelEvaluation"),
         component: () => (
           <EvaluationPanel
             jobId={config.jobId}
@@ -337,7 +338,7 @@ export default function VisualizerPage() {
 
     defs.push({
       id: "semantic-search",
-      title: "Semantic Search",
+      title: t("semanticSearch"),
       component: () => (
         <SemanticSearchPanel
           jobId={config.jobId}
@@ -409,7 +410,7 @@ export default function VisualizerPage() {
                 onClick={() => setSidebarOpen(true)}
               >
                 <Funnel size={18} />
-                Filters
+                {t("filters")}
                 {activeFilterCount > 0 && (
                   <span className="filter-badge">{activeFilterCount}</span>
                 )}
@@ -419,7 +420,7 @@ export default function VisualizerPage() {
 
           <div className="visualizer-header-right">
             <button className="secondary" onClick={reset}>
-              <strong>New investigation</strong>
+              <strong>{t("newInvestigation")}</strong>
             </button>
           </div>
         </header>

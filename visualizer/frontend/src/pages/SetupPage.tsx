@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { checkDataset, createJob, getDatasetTypes, getJob, getModelTypes, loadJob } from "../api/client";
 import { useAppConfig } from "../context/AppContext";
@@ -7,6 +7,7 @@ import Beams from "../components/DefaultBackground";
 import ParticleText from "../components/ParticleText";
 import { EtaEstimator, formatDuration } from "../utils/eta";
 import bieleLogo from "../assets/logos/biele-logo.png"
+import { useTranslation } from "react-i18next";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -16,7 +17,7 @@ function sleep(ms: number): Promise<void> {
 
 export default function SetupPage() {
   const { setConfig } = useAppConfig();
-
+  const { t, i18n } = useTranslation();
   const [datasetPath, setDatasetPath] = useState("C:\\training_dataset");
   const [modelPath, setModelPath] = useState("E:\\rf-detr_training\\trainings\\frontal1_large.pth");
   const [datasetTypes, setDatasetTypes] = useState<string[]>([]);
@@ -37,20 +38,24 @@ export default function SetupPage() {
   const [progressFraction, setProgressFraction] = useState<number | null>(null);
   const [etaMessage, setEtaMessage] = useState<string | null>(null);
 
+  const handleLanguageChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    i18n.changeLanguage(e.target.value);
+  }
+
   useEffect(() => {
     getDatasetTypes()
       .then((types) => {
         setDatasetTypes(types);
         setDatasetType((current) => current || types[0] || "");
       })
-      .catch((e) => setErrorMessage(`No se pudo conectar con el backend: ${String(e)}`));
+      .catch((e) => setErrorMessage(t("errors.connectionToBackendFail", "Could not connect to the backend") + `: ${String(e)}`));
 
     getModelTypes()
       .then((types) => {
         setModelTypes(types);
         setModelType((current) => current || types[0] || "");
       })
-      .catch((e) => setErrorMessage(`No se pudo conectar con el backend: ${String(e)}`));
+      .catch((e) => setErrorMessage(t("errors.connectionToBackendFail", "Could not connect to the backend") + `: ${String(e)}`));
   }, []);
 
   // Check for an existing DB whenever datasetPath changes (debounced via blur / explicit set).
@@ -86,7 +91,7 @@ export default function SetupPage() {
     modelPath.trim().length > 0 &&
     datasetType.length > 0 &&
     modelType.length > 0 &&
-    !submitting && 
+    !submitting &&
     !dbCheckLoading;
 
   async function pickDatasetDirectory(): Promise<void> {
@@ -110,14 +115,14 @@ export default function SetupPage() {
       const selected = await open({
         directory: false,
         multiple: false,
-        title: "Selecciona el archivo de modelo",
+        title: t("selectModelFile"),
         filters: [
           {
-            name: 'Modelos PyTorch',
+            name: t("models", { modelType: "PyTorch" }),
             extensions: ['pth']
           },
           {
-            name: 'Todos los archivos',
+            name: t("allFiles"),
             extensions: ['*']
           }
         ]
@@ -179,7 +184,7 @@ export default function SetupPage() {
           setEtaMessage(null);
         } else if (latest.num_images_total > 0) {
           setStatusMessage(
-            `Computing embeddings and predictions: ${latest.num_images_processed}/${latest.num_images_total} images ` +
+            t("computingEmbeddingsAndPredictions", { processedCount: latest.num_images_processed, totalCount: latest.num_images_total }) +
             `(${latest.num_records} registros)`,
           );
           setProgressFraction(latest.num_images_processed / latest.num_images_total);
@@ -188,11 +193,11 @@ export default function SetupPage() {
             remainingSeconds == null
               ? "Estimating remaining time..."
               : remainingSeconds === 0
-                ? "Finalizando..."
-                : `Estimated remaining time: ${formatDuration(remainingSeconds)}`,
+                ? t("estimatingRemainingTime")
+                : t("estimatedRemainingTime", { remainingSeconds: formatDuration(remainingSeconds, t) }),
           );
         } else {
-          setStatusMessage(`Computing embeddings and predictions... (${latest.num_records} registros)`);
+          setStatusMessage(t("computingEmbeddingsAndPredictionsRecords_one", {count: latest.num_records}));
           setProgressFraction(null);
           setEtaMessage(null);
         }
@@ -201,7 +206,7 @@ export default function SetupPage() {
       }
 
       if (latest.status === "error") {
-        throw new Error(latest.error ?? "Dataset inference job failed for unknown reason");
+        throw new Error(latest.error ?? t("datasetInferenceJobFail"));
       }
 
       setConfig({
@@ -227,6 +232,11 @@ export default function SetupPage() {
     void handleDatasetPathCommit(datasetPath);
   }, []);
 
+  const LANGUAGES = [
+    { code: "es_ES", label: "Español" },
+    { code: "en_US", label: "English (US)" }
+  ]
+
   return (
     <div className="setup-page">
       <Beams
@@ -241,7 +251,22 @@ export default function SetupPage() {
         centralContent={<img src={bieleLogo} alt="Biele" className="beams-logo" />}
       />
       <main className="setup-container">
-        <h1 style={{margin: '0px'}}>
+        <label htmlFor="language-select" style={{ marginRight: "0.5rem" }}>
+          {t("select_language", "Idioma:")}
+        </label>
+
+        <select
+          id="language-select"
+          value={i18n.resolvedLanguage}
+          onChange={handleLanguageChange}
+        >
+          {LANGUAGES.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
+        <h1 style={{ margin: '0px' }}>
           <ParticleText
             text="Model tweaker"
             particleSize={2.2}
@@ -262,13 +287,13 @@ export default function SetupPage() {
           />
         </h1>
         <p className="setup-subtitle">
-          Introduce the dataset and the model that you want to investigate. Embeddings will be compuetd before going to the visualization page.
+          {t("setupPageText")}
         </p>
 
         {progressFraction == null ? (
           <form className="setup-form" onSubmit={handleSubmit}>
             <label className="field">
-              <span>Ruta del dataset</span>
+              <span>{t("datasetPath")}</span>
               <div className="path-field">
                 <input
                   type="text"
@@ -279,28 +304,28 @@ export default function SetupPage() {
                   disabled={submitting}
                 />
                 <button type="button" onClick={pickDatasetDirectory} disabled={submitting} >
-                  Seleccionar carpeta
+                  {t("selectFolder")}
                 </button>
               </div>
             </label>
 
             {/* DB detection banner */}
             {dbCheckLoading && (
-              <p className="setup-db-checking">Checking existing database...</p>
+              <p className="setup-db-checking">{t("searchingExistingDatabase")}</p>
             )}
             {dbCheck?.has_db && !dbCheckLoading && (
               <div className="setup-db-banner">
                 <p className="setup-db-found">
-                  <strong>Existing data base found</strong>
+                  <strong>{t("existingDatabaseFound")}</strong>
                   {" — "}
-                  {dbCheck.num_records.toLocaleString()} registers
+                  {dbCheck.num_records.toLocaleString()} {t("records")}
                   {dbCheck.has_dimensionality_reduction && dbCheck.dimensionality_reduction_components
                     ? `, reducción components ${dbCheck.dimensionality_reduction_components}`
                     : ", without computed reduction"}
                   {dbCheck.can_resume && (
                     <span className="setup-db-warn">
                       {" "}
-                      (Interrupted inference: {dbCheck.num_images_remaining.toLocaleString()} images left)
+                      ({t("interruptedInference", { count: dbCheck.num_images_remaining.toLocaleString() })})
                     </span>
                   )}
                 </p>
@@ -311,7 +336,7 @@ export default function SetupPage() {
                     onClick={() => setDbChoice("load")}
                     disabled={submitting || dbCheck.can_resume}
                   >
-                    Load existing
+                    {t("loadExistingDatabase")}
                   </button>
                   {dbCheck.can_resume && (
                     <button
@@ -320,7 +345,7 @@ export default function SetupPage() {
                       onClick={() => setDbChoice("resume")}
                       disabled={submitting}
                     >
-                      Keep up with inferences
+                      {t("resumeInference")}
                     </button>
                   )}
                   <button
@@ -329,16 +354,16 @@ export default function SetupPage() {
                     onClick={() => setDbChoice("recalculate")}
                     disabled={submitting}
                   >
-                    Recalculate & override
+                    {t("recalculateAndOverride")}
                   </button>
                 </div>
               </div>
             )}
 
             <label className="field">
-              <span>Tipo de dataset</span>
+              <span>{t("datasetType")}</span>
               <select value={datasetType} onChange={(e) => setDatasetType(e.currentTarget.value)} disabled={submitting}>
-                {datasetTypes.length === 0 && <option value="">Cargando...</option>}
+                {datasetTypes.length === 0 && <option value="">{t("loading")}</option>}
                 {datasetTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -348,7 +373,7 @@ export default function SetupPage() {
             </label>
 
             <label className="field">
-              <span>Ruta del modelo</span>
+              <span>{t("modelPath")}</span>
               <div className="path-field">
                 <input
                   type="text"
@@ -358,19 +383,19 @@ export default function SetupPage() {
                   disabled={submitting}
                 />
                 <button type="button" onClick={pickModelFile} disabled={submitting}>
-                  Seleccionar archivo
+                  {t("selectFile")}
                 </button>
               </div>
             </label>
 
             <label className="field">
-              <span>Tipo de modelo</span>
+              <span>{t("modelType")}</span>
               <select
                 value={modelType}
                 onChange={(e) => setModelType(e.currentTarget.value)}
                 disabled={submitting}
               >
-                {modelTypes.length === 0 && <option value="">Cargando...</option>}
+                {modelTypes.length === 0 && <option value="">{t("loading")}</option>}
                 {modelTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -380,7 +405,7 @@ export default function SetupPage() {
             </label>
 
             <button type="submit" disabled={!canSubmit}>
-              {submitting ? "Procesando..." : dbChoice === "load" ? "Load" : dbChoice === "resume" ? "Resume" : "Visualizar"}
+              {submitting ? t("processing") : dbChoice === "load" ? t("load") : dbChoice === "resume" ? t("resume") : t("view")}
             </button>
           </form>
         ) : (

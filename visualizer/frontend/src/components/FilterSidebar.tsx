@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, ChangeEvent } from "react";
 import type { EmbeddingRecordDTO } from "../types";
 import CheckBox from "./Checkbox";
 import {
@@ -14,6 +14,7 @@ import {
   LucideIcon
 } from 'lucide-react';
 import SegmentedControl from "./SegmentedControl";
+import { useTranslation } from "react-i18next";
 
 // -----------------------------------------------------------------------
 // Types
@@ -203,13 +204,21 @@ export default function FilterSidebar({
   onConfModeChange,
   setSidebarOpen,
 }: FilterSidebarProps) {
+  const { t, i18n } = useTranslation();
+
+  const LANGUAGES = [
+    { code: "es_ES", label: "Español" },
+    { code: "en_US", label: "English (US)" }
+  ]
+  const handleLanguageChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    i18n.changeLanguage(e.target.value)
+  }
 
   // Derived collections
   const availableSplits = useMemo(
     () => Array.from(new Set(records.map((r) => r.split))).sort(),
     [records],
   );
-
   const availableClasses = useMemo(() => {
     const ids = new Set<number>();
     for (const r of records) {
@@ -320,28 +329,39 @@ export default function FilterSidebar({
           type="button"
           className="visualizer-sidebar-close"
           onClick={() => setSidebarOpen(false)}
-          title="Cerrar filtros"
+          title={t("closePanel")}
         >
           <PanelLeftClose size={20} />
         </button>
+        <select
+          id="language-select"
+          value={i18n.resolvedLanguage}
+          onChange={handleLanguageChange}
+        >
+          {LANGUAGES.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="fsb-header">
-        <span className="fsb-title">Filtros <Funnel size={18} /></span>
+        <span className="fsb-title">{t("filters")} <Funnel size={18} /></span>
         {activeFilterCount > 0 && (
           <button type="button" className="fsb-reset" onClick={resetAll}>
-            Erase filters ({activeFilterCount})
+            {t("clearFilters")} ({activeFilterCount})
           </button>
         )}
       </div>
 
       {/* ── Nombre  ── */}
-      <Section title="Image name" icon={Search}>
+      <Section title={t("imageName")} icon={Search}>
         <div className="fsb-search-row">
           <input
             type="text"
             className="fsb-search-input"
-            placeholder="Buscar por nombre..."
+            placeholder={t("searchByName")}
             value={filters.searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
@@ -350,7 +370,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Prediction quality ── */}
-      <Section title="Prediction quality" icon={ChartPie}>
+      <Section title={t("predictionOutcome")} icon={ChartPie}>
         <div className="fsb-quality-pills">
           {ALL_QUALITIES.map((q) => {
             const active = filters.qualities.size === 0 || filters.qualities.has(q);
@@ -372,12 +392,12 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Confidence ── */}
-      <Section title="Confidence" icon={SlidersHorizontal}>
+      <Section title={t("confidence")} icon={SlidersHorizontal}>
         <div className="conf-type-selector">
           <SegmentedControl
             options={[
               { value: "global", label: "Global" },
-              { value: "perclass", label: "Por clase" },
+              { value: "perclass", label: t("byClass") },
             ]}
             value={confMode}
             onChange={onConfModeChange}
@@ -439,7 +459,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Classes ── */}
-      <Section title="Classes" icon={Tags}>
+      <Section title={t("classes")} icon={Tags}>
         <div className="fsb-class-list">
           {availableClasses.map((id) => {
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);

@@ -1,5 +1,6 @@
 import { useState, useRef, ReactNode } from "react";
 import "../styles/multiPanelLayout.css";
+import { useTranslation } from "react-i18next";
 
 export interface PanelDefinition {
   id: string;
@@ -24,6 +25,7 @@ export default function MultiPanelLayout({
 }: MultiPanelLayoutProps) {
   const [showPanelMenu, setShowPanelMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   // Derivamos los paneles visibles directamente de los IDs activos proporcionados por el padre
   const visiblePanels = activePanelIds
@@ -63,8 +65,8 @@ export default function MultiPanelLayout({
                   <button
                     className="close-button"
                     onClick={() => handleRemovePanel(panelDef.id)}
-                    title="Cerrar panel"
-                    aria-label="Cerrar panel"
+                    title={t("closePanel")}
+                    aria-label={t("closePanel")}
                   >
                     ✕
                   </button>
@@ -75,8 +77,8 @@ export default function MultiPanelLayout({
                   <button
                     className="add-panel-button"
                     onClick={() => setShowPanelMenu(!showPanelMenu)}
-                    title="Agregar panel"
-                    aria-label="Agregar panel"
+                    title={t("addPanel")}
+                    aria-label={t("addPanel")}
                   >
                     +
                   </button>
