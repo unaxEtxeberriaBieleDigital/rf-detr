@@ -79,6 +79,7 @@ export default function MultiPanelLayout({
                     onClick={() => setShowPanelMenu(!showPanelMenu)}
                     title={t("addPanel")}
                     aria-label={t("addPanel")}
+                    style={{ display: visiblePanelIds.size === 4 ? 'none' : 'block' }}
                   >
                     +
                   </button>
@@ -104,7 +105,7 @@ export default function MultiPanelLayout({
           </div>
         ))}
 
-        
+
       </div>
     </div>
   );
