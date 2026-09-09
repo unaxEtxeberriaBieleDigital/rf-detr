@@ -53,6 +53,7 @@
     "classes": "Clases",
     "predictionOutcome": "Resultado de predicción",
     "close": "Cerrar",
+    "prediction": "Predicción",
     "predictions": "Predicciones",
     "resetView": "Reestablecer vista",
     "confidenceFilter": "Filtro de confianza",
@@ -77,5 +78,14 @@
     "searchCompletedSuccessfully": "Búsqueda finalizada correctamente",
     "preparingSearch": "Preparando búsqueda...",
     "clear": "Limpiar",
-    "noPredictions": "No existen predicciones."
+    "noPredictions": "No existen predicciones.",
+    "searchPath": "Ruta de búsqueda",
+    "pathExample": "C:\\ruta\\a\\una\\carpeta",
+    "browse": "Examinar",
+    "closeNeighbours": "Vecinos más cercanos (k)",
+    "searchType": "Tipo de búsqueda",
+    "defaultSearch": "Default — una imagen completa por unidad",
+    "tiledSearch": "Tiled — divide imágenes grandes en teselas",
+    "search": "Buscar",
+    "starting": "Iniciando..."
 }

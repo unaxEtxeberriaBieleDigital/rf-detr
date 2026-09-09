@@ -53,6 +53,7 @@
     "classes": "Classes",
     "predictionOutcome": "Prediction Outcome",
     "close": "Close",
+    "prediction": "Prediction",
     "predictions": "Predictions",
     "resetView": "Reset View",
     "confidenceFilter": "Confidence filter",
@@ -77,5 +78,14 @@
     "searchCompletedSuccessfully": "Search completed successfully",
     "preparingSearch": "Preparing search...",
     "clear": "Clear",
-    "noPredictions": "No predictions exist."
+    "noPredictions": "No predictions exist.",
+    "searchPath": "Search path",
+    "pathExample": "C:\\path\\to\\a\\folder",
+    "browse": "Browse",
+    "closeNeighbours": "Nearest neighbours (k)",
+    "searchType": "Search type",
+    "defaultSearch": "Default — one full image per unit",
+    "tiledSearch": "Tiled — splits large images into tiles",
+    "search": "Search",
+    "starting": "Starting..."
 }

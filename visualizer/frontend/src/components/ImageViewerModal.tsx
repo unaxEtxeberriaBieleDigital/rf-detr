@@ -391,30 +391,31 @@ export default function ImageViewerModal({
 
             {allowSearch && searchRecord && (
               <div className="iv-sidebar-section ss-sidebar-section">
-                <div className="iv-sidebar-title">Buscar similares</div>
+                <div className="iv-sidebar-title">{t("searchSimilar")}</div>
                 <p className="iv-empty">
-                  Predicción:{" "}
+                  {t("prediction")}:{" "}
                   {searchRecord.prediction?.class_id !== undefined
                     ? categories[searchRecord.prediction.class_id] ?? `Clase ${searchRecord.prediction.class_id}`
                     : "—"}{" "}
                   ({searchRecord.prediction?.confidence.toFixed(2)})
                 </p>
+                <br></br>
                 <label className="ss-field">
-                  Carpeta donde buscar
+                  {t("searchPath")}
                   <div className="ss-folder-row">
                     <input
                       type="text"
-                      placeholder="C:\ruta\a\una\carpeta"
+                      placeholder={t("pathExample")}
                       value={searchFolder}
                       onChange={(e) => setSearchFolder(e.currentTarget.value)}
                     />
                     <button type="button" className="image-viewer-btn" onClick={pickSearchFolder}>
-                      Elegir...
+                      {t("browse")}
                     </button>
                   </div>
                 </label>
                 <label className="ss-field">
-                  Nº de vecinos más cercanos (k)
+                  {t("closeNeighbours")}
                   <input
                     type="number"
                     min={1}
@@ -429,8 +430,8 @@ export default function ImageViewerModal({
                     value={searchSourceType}
                     onChange={(e) => setSearchSourceType(e.currentTarget.value as "default" | "tiled")}
                   >
-                    <option value="default">Default — una imagen completa por unidad</option>
-                    <option value="tiled">Tiled — divide imágenes grandes en teselas</option>
+                    <option value="default">{t("defaultSearch")}</option>
+                    <option value="tiled">{t("tiledSearch")}</option>
                   </select>
                 </label>
                 <button
@@ -439,7 +440,7 @@ export default function ImageViewerModal({
                   disabled={!searchFolder.trim() || starting}
                   onClick={handleStartSearch}
                 >
-                  {starting ? "Iniciando..." : "Buscar"}
+                  {starting ? t("starting") : t("search")}
                 </button>
                 {startError && <p className="setup-error">{startError}</p>}
               </div>
