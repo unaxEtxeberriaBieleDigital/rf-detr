@@ -56,7 +56,7 @@
     "predictions": "Predicciones",
     "resetView": "Reestablecer vista",
     "confidenceFilter": "Filtro de confianza",
-    "useCurrentFilter": "Usar filtro de confianza actual",
+    "useCurrentConfidenceFilter": "Usar filtro de confianza actual",
     "minConfidence": "Confianza mínima",
     "noGroundTruth": "No existe ninguna GT.",
     "imageGallery": "Galería de imágenes",

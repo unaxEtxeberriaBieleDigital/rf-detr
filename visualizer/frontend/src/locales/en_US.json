@@ -56,7 +56,7 @@
     "predictions": "Predictions",
     "resetView": "Reset View",
     "confidenceFilter": "Confidence filter",
-    "useCurrentFilter": "Use current confidence filter",
+    "useCurrentConfidenceFilter": "Use current confidence filter",
     "minConfidence": "Minimum confidence",
     "noGroundTruth": "No ground truth exists.",
     "imageGallery": "Image gallery",

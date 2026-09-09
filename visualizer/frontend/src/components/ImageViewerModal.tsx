@@ -299,9 +299,9 @@ export default function ImageViewerModal({
                   checked={useGlobalFilters}
                   onChange={(e) => setUseGlobalFilters(e.currentTarget.checked)}
                 />
-                {t("useCurrentFilter")} ({minConfidence.toFixed(2)})
+                {t("useCurrentConfidenceFilter")} ({minConfidence.toFixed(2)})
               </label>
-              <div className="iv-conf-row">
+              <div className="iv-conf-row" style={{display: useGlobalFilters ? "none" : 'block'}}>
                 <label htmlFor="iv-local-conf" className="iv-conf-label">
                   {t("minConfidence")}: {effectiveMinConfidence.toFixed(2)}
                 </label>
