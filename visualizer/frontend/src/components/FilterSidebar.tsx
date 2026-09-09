@@ -164,15 +164,19 @@ const ALL_QUALITIES: PredQuality[] = ["tp", "fp", "fn", "misclassified"];
 function Section({
   title,
   icon: Icon,
+  scrollable = false,
   children,
 }: {
   title: string;
   icon: LucideIcon;
+  scrollable?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
+  const typeClass = scrollable ? "fsb-section-scrollable" : "fsb-section-fixed";
+
   return (
-    <div className={`fsb-section ${open ? "open" : ""}`}>
+    <div className={`fsb-section ${typeClass} ${open ? "open" : ""}`}>
       <button
         type="button"
         className="fsb-section-header"
@@ -365,10 +369,10 @@ export default function FilterSidebar({
             value={filters.searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
-          <button type="button" className="fsb-reset" style={{display: 'flex', justifyContent: 'center', alignItems: 'center'}}
+          <button type="button" className="fsb-reset" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
             onClick={() => handleSearchChange("")} title={t("clear")}
           >
-            <X color="white"/></button>
+            <X color="white" /></button>
         </div>
       </Section>
 
@@ -395,7 +399,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Confidence ── */}
-      <Section title={t("confidence")} icon={SlidersHorizontal}>
+      <Section title={t("confidence")} icon={SlidersHorizontal} scrollable>
         <div className="conf-type-selector">
           <SegmentedControl
             options={[
@@ -462,7 +466,7 @@ export default function FilterSidebar({
       </Section>
 
       {/* ── Classes ── */}
-      <Section title={t("classes")} icon={Tags}>
+      <Section title={t("classes")} icon={Tags} scrollable>
         <div className="fsb-class-list">
           {availableClasses.map((id) => {
             const checked = filters.visibleClasses.size === 0 || filters.visibleClasses.has(id);

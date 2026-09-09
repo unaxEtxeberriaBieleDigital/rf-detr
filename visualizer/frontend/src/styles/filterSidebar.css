@@ -1,12 +1,19 @@
 /* ── Filter Sidebar ── */
 .fsb-sidebar {
   width: 100%;
+  height: 100%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: transparent;
   font-size: 0.84rem;
   padding: 1px;
+  overflow: hidden;
+}
+
+.fsb-top-bar,
+.fsb-header {
+  flex-shrink: 0;
 }
 
 .fsb-header {
@@ -38,6 +45,17 @@
 .fsb-section {
   border-radius: 0%;
   border-left: 4px solid var(--bg-hover, rgba(0, 0, 0, 0.04));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fsb-section-fixed {
+  flex-shrink: 0;
+}
+
+.fsb-section-scrollable {
+  flex: 0 1 auto;
 }
 
 .fsb-section.open {
@@ -45,6 +63,7 @@
 }
 
 .fsb-section-header {
+  flex-shrink: 0;
   width: 100%;
   display: flex;
   justify-content: space-between;
@@ -96,6 +115,12 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+
+.fsb-section-scrollable .fsb-section-body {
+  overflow-y: auto;
 }
 
 .fsb-search-row {
@@ -225,8 +250,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  max-height: 220px;
-  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -265,8 +288,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  /* max-height: 240px; */
-  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -278,66 +299,71 @@
 }
 
 .checkbox-wrapper-31:hover .check {
-    stroke-dashoffset: 0;
+  stroke-dashoffset: 0;
 }
 
 .checkbox-wrapper-31 {
-    position: relative;
-    display: inline-block;
-    width: 20px;
-    height: 20px;
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
 }
+
 .checkbox-wrapper-31 .background {
-    fill: #464545;
-    transition: ease all 0.6s;
-    -webkit-transition: ease all 0.6s;
+  fill: #464545;
+  transition: ease all 0.6s;
+  -webkit-transition: ease all 0.6s;
 }
+
 .checkbox-wrapper-31 .stroke {
-    fill: none;
-    stroke: #464545;
-    stroke-miterlimit: 10;
-    stroke-width: 2px;
-    stroke-dashoffset: 100;
-    stroke-dasharray: 100;
-    transition: ease all 0.6s;
-    -webkit-transition: ease all 0.6s;
+  fill: none;
+  stroke: #464545;
+  stroke-miterlimit: 10;
+  stroke-width: 2px;
+  stroke-dashoffset: 100;
+  stroke-dasharray: 100;
+  transition: ease all 0.6s;
+  -webkit-transition: ease all 0.6s;
 }
+
 .checkbox-wrapper-31 .check {
-    fill: none;
-    stroke: #464545;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 2px;
-    stroke-dashoffset: 22;
-    stroke-dasharray: 22;
-    transition: ease all 0.6s;
-    -webkit-transition: ease all 0.6s;
+  fill: none;
+  stroke: #464545;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2px;
+  stroke-dashoffset: 22;
+  stroke-dasharray: 22;
+  transition: ease all 0.6s;
+  -webkit-transition: ease all 0.6s;
 }
+
 .checkbox-wrapper-31 input[type=checkbox] {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    left: 0;
-    top: 0;
-    margin: 0;
-    opacity: 0;
-    -appearance: none;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  top: 0;
+  margin: 0;
+  opacity: 0;
+  -appearance: none;
 }
+
 .checkbox-wrapper-31 input[type=checkbox]:hover {
-    cursor: pointer;
-}
-.checkbox-wrapper-31 input[type=checkbox]:checked + svg .background {
-    fill: #fafafa;
+  cursor: pointer;
 }
 
-.checkbox-wrapper-31 input[type=checkbox]:checked + svg .stroke {
-    stroke-dashoffset: 0;
-}
-.checkbox-wrapper-31 input[type=checkbox]:checked + svg .check {
-    stroke-dashoffset: 0;
+.checkbox-wrapper-31 input[type=checkbox]:checked+svg .background {
+  fill: #fafafa;
 }
 
+.checkbox-wrapper-31 input[type=checkbox]:checked+svg .stroke {
+  stroke-dashoffset: 0;
+}
 
+.checkbox-wrapper-31 input[type=checkbox]:checked+svg .check {
+  stroke-dashoffset: 0;
+}
 
 .fsb-check-label {
   font-size: 0.79rem;
