@@ -18,8 +18,17 @@ function sleep(ms: number): Promise<void> {
 export default function SetupPage() {
   const { setConfig } = useAppConfig();
   const { t, i18n } = useTranslation();
-  const [datasetPath, setDatasetPath] = useState("C:\\training_dataset");
-  const [modelPath, setModelPath] = useState("E:\\rf-detr_training\\trainings\\frontal1_large.pth");
+
+  const [datasetPath, setDatasetPath] = useState(() => {
+    const currentLocalStorage = localStorage.getItem('datasetPath');
+    return currentLocalStorage ? currentLocalStorage : '';
+  });
+
+  const [modelPath, setModelPath] = useState(() => {
+    const currentLocalStorage = localStorage.getItem('modelPath');
+    return currentLocalStorage ? currentLocalStorage : '';
+  });
+
   const [datasetTypes, setDatasetTypes] = useState<string[]>([]);
   const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [datasetType, setDatasetType] = useState("");
@@ -41,6 +50,13 @@ export default function SetupPage() {
   const handleLanguageChange = (e: ChangeEvent<HTMLSelectElement>) => {
     i18n.changeLanguage(e.target.value);
   }
+
+  useEffect(() => {
+    localStorage.setItem('datasetPath', datasetPath);
+  }, [datasetPath]);
+  useEffect(() => {
+    localStorage.setItem('modelPath', modelPath);
+  }, [modelPath]);
 
   useEffect(() => {
     getDatasetTypes()
@@ -197,7 +213,7 @@ export default function SetupPage() {
                 : t("estimatedRemainingTime", { remainingSeconds: formatDuration(remainingSeconds, t) }),
           );
         } else {
-          setStatusMessage(t("computingEmbeddingsAndPredictionsRecords_one", {count: latest.num_records}));
+          setStatusMessage(t("computingEmbeddingsAndPredictionsRecords_one", { count: latest.num_records }));
           setProgressFraction(null);
           setEtaMessage(null);
         }
