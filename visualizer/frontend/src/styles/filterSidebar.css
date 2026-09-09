@@ -298,6 +298,11 @@
   cursor: pointer;
 }
 
+.btn-like-appearance:hover:not(:disabled) {
+  border-color: var(--accent);
+  background-color: var(--bg-hover);
+}
+
 .checkbox-wrapper-31:hover .check {
   stroke-dashoffset: 0;
 }

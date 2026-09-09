@@ -160,15 +160,7 @@ export default function ImageViewerModal({
 
   const displayedRecords = useMemo(() => {
     if (!hoveredRecordId) return records;
-
-    return records.map(r => {
-      if (r.id === hoveredRecordId) {
-        return r;
-      }
-      else {
-        return null;
-      }
-    }).filter(Boolean) as EmbeddingRecordDTO[];
+    return records.filter((r) => r.id === hoveredRecordId);
   }, [records, hoveredRecordId]);
 
   const defectRecords = useMemo(
@@ -301,7 +293,7 @@ export default function ImageViewerModal({
                 />
                 {t("useCurrentConfidenceFilter")} ({minConfidence.toFixed(2)})
               </label>
-              <div className="iv-conf-row" style={{display: useGlobalFilters ? "none" : 'block'}}>
+              <div className="iv-conf-row" style={{ display: useGlobalFilters ? "none" : 'block' }}>
                 <label htmlFor="iv-local-conf" className="iv-conf-label">
                   {t("minConfidence")}: {effectiveMinConfidence.toFixed(2)}
                 </label>
@@ -327,7 +319,13 @@ export default function ImageViewerModal({
                   const classId = r.ground_truth?.class_id;
                   const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
                   return (
-                    <li key={`gt-${r.id}-${i}`} className="iv-list-item">
+                    <li
+                      key={`gt-${r.id}-${i}`}
+                      className="iv-list-item iv-list-item-btn btn-like-appearance"
+                      style={{ cursor: "default", padding: "0" }}
+                      onMouseEnter={() => setHoveredRecordId(r.id)}
+                      onMouseLeave={() => setHoveredRecordId(null)}
+                    >
                       <span className="iv-dot" style={{ background: GT_COLOR }} />
                       <span className="iv-list-label" title={label}>
                         {label}
