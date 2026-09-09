@@ -76,5 +76,6 @@
     "cancelSearch": "Cancel search",
     "searchCompletedSuccessfully": "Search completed successfully",
     "preparingSearch": "Preparing search...",
-    "clear": "Clear"
+    "clear": "Clear",
+    "noPredictions": "No predictions exist."
 }

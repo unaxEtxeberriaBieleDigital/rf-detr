@@ -152,6 +152,11 @@ export default function ImageViewerModal({
   // The same file name can exist in several splits with different (or no) annotations, so we
   // surface the split and the actual GT/prediction counts to make the overlay state unambiguous.
   const groundTruthRecords = useMemo(() => records.filter((r) => r.ground_truth?.bbox), [records]);
+  const allPredictionRecords = useMemo(
+    () => records.filter((r) => Boolean(r.prediction?.bbox)),
+    [records],
+  );
+  const totalPredCount = allPredictionRecords.length;
 
   const displayedRecords = useMemo(() => {
     if (!hoveredRecordId) return records;
@@ -177,6 +182,7 @@ export default function ImageViewerModal({
       }),
     [records, effectiveMinConfidence, classThresholds, useGlobalFilters],
   );
+  console.log('defectRecords', defectRecords)
   const gtCount = groundTruthRecords.length;
   const predCount = defectRecords.length;
 
@@ -334,51 +340,54 @@ export default function ImageViewerModal({
 
             <div className="iv-sidebar-section">
               <div className="iv-sidebar-title">{t("predictions")} ({predCount})</div>
-              {predCount === 0 && <p className="iv-empty">{t("noPredictionAboveThreshold")}</p>}
-              <ul className="iv-list">
-                {defectRecords.map((r) => {
-                  const classId = r.prediction?.class_id;
-                  const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
-                  const color = STATUS_COLORS[r.status] ?? "#ef6c00";
-                  const selected = r.id === searchRecordId;
-                  if (!allowSearch) {
-                    return (
-                      <li key={`pred-${r.id}`} className="iv-list-item">
-                        <span className="iv-dot" style={{ background: color }} />
-                        <span className="iv-list-label" title={label}>
-                          {label}
-                        </span>
-                        <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
-                        <span className="iv-status-badge" style={{ color }}>
-                          {STATUS_LABELS[r.status] ?? r.status}
-                        </span>
-                      </li>
-                    );
-                  }
+              {totalPredCount === 0 ? (
+                <p className="iv-empty">{t("noPredictions")}</p>
+              ) : predCount === 0 ? (
+                <p className="iv-empty">{t("noPredictionAboveThreshold")}</p>
+              ) : null}
+              <ul className="iv-list">                {defectRecords.map((r) => {
+                const classId = r.prediction?.class_id;
+                const label = classId !== undefined ? categories[classId] ?? `Clase ${classId}` : "—";
+                const color = STATUS_COLORS[r.status] ?? "#ef6c00";
+                const selected = r.id === searchRecordId;
+                if (!allowSearch) {
                   return (
-                    <li key={`pred-${r.id}`} onMouseEnter={() => setHoveredRecordId(r.id)} onMouseLeave={() => setHoveredRecordId(null)}
-                      style={{ margin: "0" }}
-                    >
-                      <button
-                        type="button"
-                        className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
-                        title="Buscar detecciones similares a esta"
-                        onClick={() =>
-                          setSearchRecordId((current) => (current === r.id ? null : r.id))
-                        }
-                      >
-                        <span className="iv-dot" style={{ background: color }} />
-                        <span className="iv-list-label" title={label}>
-                          {label}
-                        </span>
-                        <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
-                        <span className="iv-status-badge" style={{ color }}>
-                          {STATUS_LABELS[r.status] ?? r.status}
-                        </span>
-                      </button>
+                    <li key={`pred-${r.id}`} className="iv-list-item">
+                      <span className="iv-dot" style={{ background: color }} />
+                      <span className="iv-list-label" title={label}>
+                        {label}
+                      </span>
+                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                      <span className="iv-status-badge" style={{ color }}>
+                        {STATUS_LABELS[r.status] ?? r.status}
+                      </span>
                     </li>
                   );
-                })}
+                }
+                return (
+                  <li key={`pred-${r.id}`} onMouseEnter={() => setHoveredRecordId(r.id)} onMouseLeave={() => setHoveredRecordId(null)}
+                    style={{ margin: "0" }}
+                  >
+                    <button
+                      type="button"
+                      className={`iv-list-item iv-list-item-btn ${selected ? "iv-list-item-selected" : ""}`}
+                      title="Buscar detecciones similares a esta"
+                      onClick={() =>
+                        setSearchRecordId((current) => (current === r.id ? null : r.id))
+                      }
+                    >
+                      <span className="iv-dot" style={{ background: color }} />
+                      <span className="iv-list-label" title={label}>
+                        {label}
+                      </span>
+                      <span className="iv-list-meta">{r.prediction!.confidence.toFixed(2)}</span>
+                      <span className="iv-status-badge" style={{ color }}>
+                        {STATUS_LABELS[r.status] ?? r.status}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
               </ul>
             </div>
 
