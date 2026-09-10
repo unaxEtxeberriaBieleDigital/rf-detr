@@ -5,6 +5,7 @@ import type { ClassThresholds, EmbeddingRecordDTO } from "../types";
 import ImageWithBoxes from "./ImageWithBoxes";
 import PanZoomViewport, { type PanZoomHandle } from "./PanZoomViewport";
 import { useTranslation } from "react-i18next";
+import { getStored, setStored } from "../utils/store";
 
 interface ImageViewerModalProps {
   isOpen: boolean;
@@ -91,14 +92,13 @@ export default function ImageViewerModal({
   // embeddings close to that single detection's embedding, over an arbitrary folder. Progress
   // and results are shown by the caller (next to the embedding plot), not in this modal.
   const [searchRecordId, setSearchRecordId] = useState<string | null>(null);
-  const [searchFolder, setSearchFolder] = useState(() => {
-    return localStorage.getItem('semanticSearchPath') ?? '';
-  });
+  const [searchFolder, setSearchFolder] = useState("");
 
   const handleFolderChange = (newPath: string) => {
     setSearchFolder(newPath);
-    localStorage.setItem('semanticSearchPath', newPath);
+    setStored("semanticSearchPath", newPath);
   };
+
   const [searchK, setSearchK] = useState(DEFAULT_SEARCH_K);
   const [searchSourceType, setSearchSourceType] = useState<"default" | "tiled">("default");
   const [starting, setStarting] = useState(false);
@@ -192,8 +192,10 @@ export default function ImageViewerModal({
     setUseGlobalFilters(true);
     setLocalMinConfidence(minConfidence);
     setSearchRecordId(null);
-    const savedFolder = localStorage.getItem("semanticSearchPath") ?? "";
-    setSearchFolder(savedFolder); setSearchK(DEFAULT_SEARCH_K);
+    getStored("semanticSearchPath").then((savedPath) => {
+      setSearchFolder(savedPath);
+    });
+    setSearchK(DEFAULT_SEARCH_K);
     setSearchSourceType("default");
     setStartError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

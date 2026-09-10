@@ -6,8 +6,9 @@ import type { CheckDatasetResponse } from "../types";
 import Beams from "../components/DefaultBackground";
 import ParticleText from "../components/ParticleText";
 import { EtaEstimator, formatDuration } from "../utils/eta";
-import bieleLogo from "../assets/logos/biele-logo.png"
+import bieleLogo from "../assets/logos/biele-logo.png";
 import { useTranslation } from "react-i18next";
+import { getStored, setStored } from "../utils/store";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -19,15 +20,8 @@ export default function SetupPage() {
   const { setConfig } = useAppConfig();
   const { t, i18n } = useTranslation();
 
-  const [datasetPath, setDatasetPath] = useState(() => {
-    const currentLocalStorage = localStorage.getItem('datasetPath');
-    return currentLocalStorage ? currentLocalStorage : '';
-  });
-
-  const [modelPath, setModelPath] = useState(() => {
-    const currentLocalStorage = localStorage.getItem('modelPath');
-    return currentLocalStorage ? currentLocalStorage : '';
-  });
+  const [datasetPath, setDatasetPath] = useState("");
+  const [modelPath, setModelPath] = useState("");
 
   const [datasetTypes, setDatasetTypes] = useState<string[]>([]);
   const [modelTypes, setModelTypes] = useState<string[]>([]);
@@ -49,14 +43,45 @@ export default function SetupPage() {
 
   const handleLanguageChange = (e: ChangeEvent<HTMLSelectElement>) => {
     i18n.changeLanguage(e.target.value);
-  }
+  };
 
+  // Cargar rutas persistidas desde el store de Tauri al montar
   useEffect(() => {
-    localStorage.setItem('datasetPath', datasetPath);
-  }, [datasetPath]);
-  useEffect(() => {
-    localStorage.setItem('modelPath', modelPath);
-  }, [modelPath]);
+    let mounted = true;
+
+    async function loadSavedPaths() {
+      const [savedDataset, savedModel] = await Promise.all([
+        getStored("datasetPath"),
+        getStored("modelPath"),
+      ]);
+
+      if (mounted) {
+        if (savedDataset) {
+          setDatasetPath(savedDataset);
+          void handleDatasetPathCommit(savedDataset);
+        }
+        if (savedModel) {
+          setModelPath(savedModel);
+        }
+      }
+    }
+
+    void loadSavedPaths();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleDatasetChange = (newPath: string) => {
+    setDatasetPath(newPath);
+    void setStored("datasetPath", newPath);
+  };
+
+  const handleModelChange = (newPath: string) => {
+    setModelPath(newPath);
+    void setStored("modelPath", newPath);
+  };
 
   useEffect(() => {
     getDatasetTypes()
@@ -118,7 +143,7 @@ export default function SetupPage() {
         title: "Selecciona la carpeta del dataset",
       });
       if (typeof selected === "string" && selected.trim().length > 0) {
-        setDatasetPath(selected);
+        handleDatasetChange(selected);
         await handleDatasetPathCommit(selected);
       }
     } catch (e) {
@@ -144,7 +169,7 @@ export default function SetupPage() {
         ]
       });
       if (typeof selected === "string" && selected.trim().length > 0) {
-        setModelPath(selected);
+        handleModelChange(selected);
       }
     } catch (e) {
       setErrorMessage(`No se pudo abrir el selector de archivo: ${String(e instanceof Error ? e.message : e)}`);
@@ -244,10 +269,6 @@ export default function SetupPage() {
     }
   }
 
-  useEffect(() => {
-    void handleDatasetPathCommit(datasetPath);
-  }, []);
-
   const LANGUAGES = [
     { code: "es_ES", label: "Español" },
     { code: "en_US", label: "English (US)" }
@@ -315,7 +336,7 @@ export default function SetupPage() {
                   type="text"
                   placeholder="C:\datasets\mi-dataset"
                   value={datasetPath}
-                  onChange={(e) => setDatasetPath(e.currentTarget.value)}
+                  onChange={(e) => handleDatasetChange(e.currentTarget.value)}
                   onBlur={(e) => handleDatasetPathCommit(e.currentTarget.value)}
                   disabled={submitting}
                 />
@@ -395,7 +416,7 @@ export default function SetupPage() {
                   type="text"
                   placeholder="C:\modelos\checkpoint.pth"
                   value={modelPath}
-                  onChange={(e) => setModelPath(e.currentTarget.value)}
+                  onChange={(e) => handleModelChange(e.currentTarget.value)}
                   disabled={submitting}
                 />
                 <button type="button" onClick={pickModelFile} disabled={submitting}>
