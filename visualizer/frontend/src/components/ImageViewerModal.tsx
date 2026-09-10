@@ -91,7 +91,14 @@ export default function ImageViewerModal({
   // embeddings close to that single detection's embedding, over an arbitrary folder. Progress
   // and results are shown by the caller (next to the embedding plot), not in this modal.
   const [searchRecordId, setSearchRecordId] = useState<string | null>(null);
-  const [searchFolder, setSearchFolder] = useState("");
+  const [searchFolder, setSearchFolder] = useState(() => {
+    return localStorage.getItem('semanticSearchPath') ?? '';
+  });
+
+  const handleFolderChange = (newPath: string) => {
+    setSearchFolder(newPath);
+    localStorage.setItem('semanticSearchPath', newPath);
+  };
   const [searchK, setSearchK] = useState(DEFAULT_SEARCH_K);
   const [searchSourceType, setSearchSourceType] = useState<"default" | "tiled">("default");
   const [starting, setStarting] = useState(false);
@@ -134,7 +141,7 @@ export default function ImageViewerModal({
         title: "Selecciona la carpeta donde buscar",
       });
       if (typeof selected === "string" && selected.trim().length > 0) {
-        setSearchFolder(selected);
+        handleFolderChange(selected);
       }
     } catch (e) {
       setStartError(`No se pudo abrir el selector de carpetas: ${String(e instanceof Error ? e.message : e)}`);
@@ -185,8 +192,8 @@ export default function ImageViewerModal({
     setUseGlobalFilters(true);
     setLocalMinConfidence(minConfidence);
     setSearchRecordId(null);
-    setSearchFolder("");
-    setSearchK(DEFAULT_SEARCH_K);
+    const savedFolder = localStorage.getItem("semanticSearchPath") ?? "";
+    setSearchFolder(savedFolder); setSearchK(DEFAULT_SEARCH_K);
     setSearchSourceType("default");
     setStartError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,7 +414,7 @@ export default function ImageViewerModal({
                       type="text"
                       placeholder={t("pathExample")}
                       value={searchFolder}
-                      onChange={(e) => setSearchFolder(e.currentTarget.value)}
+                      onChange={(e) => handleFolderChange(e.currentTarget.value)}
                     />
                     <button type="button" className="image-viewer-btn" onClick={pickSearchFolder}>
                       {t("browse")}
