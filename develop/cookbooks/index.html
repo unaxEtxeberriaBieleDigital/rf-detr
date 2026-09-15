@@ -73,6 +73,10 @@
     
   
   
+  
+  <meta name="robots" content="noindex, follow">
+  
+  
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-5M220DKLMB"></script>
   <script>
@@ -174,6 +178,14 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              You are reading the unreleased development version of the documentation, built from the <code>develop</code> branch.<br>
+APIs described here may change or may never ship in a release, so use the <a href="https://rfdetr.roboflow.com/latest/"><strong>latest stable release</strong></a> instead.
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL(".."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -1213,9 +1225,25 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../learn/export/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
         
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1229,7 +1257,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Export Model
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../learn/export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../learn/export-blueprint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exporter Blueprint
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2322,7 +2422,7 @@
              data-labels="TRAINING,COCO2017,PYTORCH LIGHTNING"
              data-version="v1.10.0"
              data-author="Borda"
-             data-description="Download the full public COCO2017 dataset and train RF-DETR Nano for 40 epochs end to end on a high-end GPU (A100 / H100 / RTX PRO 6000 — e.g. Colab Pro+ with an A100 runtime), using shipped defaults that already carry the latest training-throughput optimizations."></div>
+             data-description="Download the full public COCO2017 dataset and train RF-DETR Nano from scratch for 40 epochs end to end on a single CUDA GPU with torch.compile and automatic mixed precision (bf16 when supported, otherwise fp16), with optional FP8 via Transformer Engine."></div>
         </a>
       
         <a href="export-coreml/">
@@ -2350,6 +2450,15 @@
              data-version="v1.9.0"
              data-author="Borda"
              data-description="Export RF-DETR to a portable ExecuTorch .pte program (XNNPACK / CoreML / QNN backends) and run it on the CPU — on-device mobile and edge deployment with supervision-annotated detections."></div>
+        </a>
+      
+        <a href="export-tflite/">
+          <div class="card repo-card"
+             data-name="Export to TFLite (INT8) & Run Inference"
+             data-labels="EXPORT,TFLITE,DEPLOY"
+             data-version="v1.11.0"
+             data-author="Borda"
+             data-description="Export RF-DETR to TensorFlow Lite with INT8 dynamic-range quantization and run it directly with tensorflow.lite.Interpreter — mobile and edge deployment, validated against a fp32 PyTorch baseline."></div>
         </a>
       
         <a href="fine-tune_detection/">
@@ -2514,6 +2623,8 @@
     
     
       <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../javascripts/version-banner.js"></script>
       
     
   </body>
