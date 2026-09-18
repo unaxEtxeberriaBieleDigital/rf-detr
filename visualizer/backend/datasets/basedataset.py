@@ -119,8 +119,8 @@ class BaseDataset(ABC):
 
             if categories is None:
                 categories = current_categories
-            # elif categories != current_categories and split_type != Split.TRAIN:
-            #     raise Exception(f"Category definitions differ between dataset splits ({split_type.name})")
+            elif categories != current_categories and split_type != Split.TRAIN:
+                raise Exception(f"Category definitions differ between dataset splits ({split_type.name})")
 
         if categories is None:
             raise Exception("The dataset does not have supported annotations")
