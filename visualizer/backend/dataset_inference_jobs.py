@@ -6,6 +6,7 @@
 
 from pathlib import Path
 import threading
+import uuid
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.datasets.basedataset import BaseDataset, Split
@@ -21,10 +22,34 @@ DATASET_INFERENCE_JOB_STORE: dict[str, DatasetInferenceJobStatus] = {}
 _ACTIVE_DATASET_INFERENCE_JOB_IDS_BY_PATH: dict[str, str] = {}
 _ACTIVE_DATASET_INFERENCE_JOB_IDS_LOCK = threading.Lock()
 
+# Fixed namespace used to derive a stable dataset_inference_job id from a dataset path (see
+# dataset_inference_job_id_for_path). Any constant UUID works here; it only needs to stay
+# the same across process restarts so the derived ids stay stable.
+_JOB_ID_NAMESPACE = uuid.UUID("6f3f5f2e-6b8e-4b8a-9b0a-2f3c8f6a1d90")
+
 
 def dataset_inference_job_path_key(dataset_path: str | Path) -> str:
     """Return a normalized key used for one dataset/dataset_inference_job DB path."""
     return str(Path(dataset_path).resolve())
+
+
+def dataset_inference_job_id_for_path(dataset_path: str | Path) -> str:
+    """Return a stable dataset_inference_job id derived from *dataset_path*.
+
+    Unlike a random ``uuid4``, this always returns the same id for the same dataset path,
+    across separate calls and even across backend restarts. This lets a frontend that lost
+    track of a job (e.g. after a page refresh, or after recovering from a "job not found"
+    error by reloading the same dataset) land on the exact same job_id it had before, so
+    anything keyed by that job_id elsewhere (e.g. a still-running semantic search's
+    ``parent_job_id``) remains reachable instead of becoming orphaned.
+
+    Args:
+        dataset_path: Dataset root directory the dataset_inference_job was created for.
+
+    Returns:
+        A deterministic UUID (as a string) derived from the normalized dataset path.
+    """
+    return str(uuid.uuid5(_JOB_ID_NAMESPACE, dataset_inference_job_path_key(dataset_path)))
 
 
 def try_register_active_dataset_inference_job(dataset_path: str | Path, dataset_inference_job_id: str) -> str | None:

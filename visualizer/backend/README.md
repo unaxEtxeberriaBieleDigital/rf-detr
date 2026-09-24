@@ -345,6 +345,9 @@ Si no te gusta la estructura del backend y lo quieres reordenar un poco, cambial
 ### Jobs en background
 Cuando el frontend lanza inferencia, el servidor devuelve inmediatamente un `202 Accepted` con el `job_id`. La inferencia corre en un **hilo separado**. El frontend hace polling (`GET /jobs/{id}`) hasta que `status == "done"`. Lo mismo aplica a la búsqueda semántica.
 
+### `job_id` determinista
+`job_id` **no** es un `uuid4` aleatorio: se deriva de forma determinista de `dataset_path` (ver `dataset_inference_job_id_for_path` en `dataset_inference_jobs.py`, un `uuid5` sobre la ruta normalizada). Así, cargar/crear un job para el mismo dataset siempre produce el mismo `job_id`, incluso tras un reinicio del frontend o una recuperación automática de "job not found". Esto es lo que permite que `SEARCH_JOB_STORE` (indexado por `parent_job_id`) siga siendo localizable por `GET /semantic-search` aunque el frontend haya perdido y recreado su referencia al job mientras una búsqueda semántica larga seguía corriendo en background.
+
 ---
 
 ## 5. Flujo principal: inferencia y evaluación — `dataset_inference_jobs.py`

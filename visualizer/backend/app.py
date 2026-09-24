@@ -52,6 +52,7 @@ from visualizer.backend.api.schemas import (
 from visualizer.backend.dataset_inference_jobs import (
     DATASET_INFERENCE_JOB_STORE,
     DatasetInferenceJobStatus,
+    dataset_inference_job_id_for_path,
     release_active_dataset_inference_job,
     run_dataset_inference_job,
     try_register_active_dataset_inference_job,
@@ -216,7 +217,9 @@ def create_job(request: JobRequest) -> JobStatusResponse:
     store.create_tables()
     split_names = [split.name for split in splits]
     requested_run_config = _build_run_config(request, split_names)
-    job_id = str(uuid.uuid4())
+    # Deterministic (not random) so that reloading the same dataset always resolves to the
+    # same job_id -- see dataset_inference_job_id_for_path for why this matters.
+    job_id = dataset_inference_job_id_for_path(request.dataset_path)
 
     existing_active_job_id = try_register_active_dataset_inference_job(request.dataset_path, job_id)
     if existing_active_job_id is not None:
@@ -361,7 +364,7 @@ def load_job(request: LoadJobRequest) -> JobStatusResponse:
         raw = json.loads(raw_categories) if isinstance(raw_categories, str) else raw_categories
         categories = {int(k): v for k, v in raw.items()}
 
-    job_id = str(uuid.uuid4())
+    job_id = dataset_inference_job_id_for_path(request.dataset_path)
     job = DatasetInferenceJobStatus(
         id=job_id,
         store=store,
