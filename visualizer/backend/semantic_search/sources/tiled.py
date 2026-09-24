@@ -37,7 +37,6 @@ from visualizer.backend.semantic_search.sources.basesource import (
     BaseSemanticSearchSource,
     ScanUnit,
     SearchResultPreview,
-    iter_image_files,
 )
 from visualizer.backend.shared_types.prediction import Prediction
 
@@ -67,29 +66,28 @@ class TiledImageSource(BaseSemanticSearchSource):
     #: pixels, keeping them light enough to embed as base64 data URLs.
     PREVIEW_MAX_SIZE = 800
 
-    def get_num_units(self, folder: Path, model: BaseModel | None = None) -> int:
-        """Count the tiles :meth:`iter_scan_units` would yield for *folder*.
+    def get_num_units_for_group(self, path: Path, model: BaseModel | None = None) -> int:
+        """Count the tiles generated for one uncached or changed source image.
 
-        Only each image's header is read (PIL's ``Image.open`` is lazy, so ``img.size`` does not decode any pixel data),
-        making this cheap enough to run up front on a folder of very large images.
+        Only the image header is read; cached images never reach this method.
         """
         tile_size = self._resolve_tile_size(model)
-        num_units = 0
-        for path in iter_image_files(folder):
-            with Image.open(path) as img:
-                orig_w, orig_h = img.size
-            resized_w, resized_h = self._resized_size(orig_w, orig_h)
-            num_units += math.ceil(resized_w / tile_size) * math.ceil(resized_h / tile_size)
-        return num_units
+        with Image.open(path) as img:
+            orig_w, orig_h = img.size
+        resized_w, resized_h = self._resized_size(orig_w, orig_h)
+        return math.ceil(resized_w / tile_size) * math.ceil(resized_h / tile_size)
 
-    def iter_scan_units(self, folder: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
-        """Yield one :class:`ScanUnit` per tile of every supported image under *folder*.
+    def iter_scan_units_for_group(self, path: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
+        """Yield tiles for one uncached or changed source image.
 
-        Lazy on purpose: only the image currently being tiled is held in memory, so the
-        engine can start inferring before the rest of the folder has even been opened.
+        Cached images are loaded directly from SQLite and never reach this method.
         """
-        for path in iter_image_files(folder):
-            yield from self._iter_image_tiles(path, model)
+        yield from self._iter_image_tiles(path, model)
+
+    def cache_signature(self, model: BaseModel | None = None) -> str:
+        """Return the cache identity for tiled preprocessing configuration."""
+        tile_size = self._resolve_tile_size(model)
+        return f"{super().cache_signature(model)}:tile={tile_size}:resize={self.RESIZE_FACTOR}"
 
     def _resolve_tile_size(self, model: BaseModel | None) -> int:
         """Return the tile size to use, taken from the model's input resolution.

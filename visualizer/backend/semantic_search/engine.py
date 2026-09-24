@@ -91,9 +91,32 @@ def run_semantic_search(
         if not folder.exists() or not folder.is_dir():
             raise ValueError(f"Search folder not found: {folder}")
 
-        cache = SearchCache(folder, model_path=str(model.model_path), model_type=model_type)
+        cache = SearchCache(
+            folder,
+            model_path=str(model.model_path),
+            model_type=model_type,
+            source_signature=source.cache_signature(model),
+        )
 
-        num_units = source.get_num_units(folder, model)
+        manifests = cache.list_group_manifests()
+        scan_plan: list[tuple[Path, int, int, int, bool]] = []
+        num_units = 0
+        for path in source.iter_group_paths(folder):
+            stat = path.stat()
+            group_key = str(path)
+            manifest = manifests.get(group_key)
+            if (
+                manifest is not None
+                and manifest.file_size == stat.st_size
+                and manifest.file_mtime_ns == stat.st_mtime_ns
+            ):
+                cache_hit = True
+                unit_count = manifest.unit_count
+            else:
+                cache_hit = False
+                unit_count = source.get_num_units_for_group(path, model)
+            scan_plan.append((path, stat.st_size, stat.st_mtime_ns, unit_count, cache_hit))
+            num_units += unit_count
         search_job.num_images_total = num_units
         logger.info(f"[search {search_job.id}] found {num_units} unit(s) to scan")
 
@@ -136,20 +159,37 @@ def run_semantic_search(
 
         # Buffer de unidades pendientes de inferencia. Se vacía en cuanto llega a
         # _BATCH_SIZE, de modo que nunca hay más de un lote de unidades en memoria.
-        pending: list[ScanUnit] = []
+        pending: list[tuple[ScanUnit, str]] = []
+        incomplete_groups: dict[str, list[int]] = {}
+        group_file_stats: dict[str, tuple[int, int]] = {}
 
         def flush_pending() -> None:
             """Run inference over the buffered units, then cache and score their detections."""
             nonlocal processed
             if not pending:
                 return
-            batch_units = list(pending)
+            batch_entries = list(pending)
             pending.clear()
+            batch_units = [unit for unit, _cache_group_key in batch_entries]
 
             batch_detections = source.process_batch(model, batch_units)
-            for unit, detections in zip(batch_units, batch_detections):
-                cache.store(unit.id, detections)
+            if len(batch_detections) != len(batch_units):
+                raise ValueError(
+                    f"Semantic-search source returned {len(batch_detections)} result sets "
+                    f"for a batch of {len(batch_units)} units"
+                )
+            for (unit, cache_group_key), detections in zip(batch_entries, batch_detections):
+                cache.store_unit(unit.id, cache_group_key, detections)
                 consider_unit(unit.id, unit.group_key, detections)
+                incomplete_groups[cache_group_key][0] -= 1
+                if incomplete_groups[cache_group_key][0] == 0:
+                    file_size, file_mtime_ns = group_file_stats[cache_group_key]
+                    cache.mark_group_complete(
+                        cache_group_key,
+                        file_size,
+                        file_mtime_ns,
+                        incomplete_groups[cache_group_key][1],
+                    )
 
             processed += len(batch_units)
             search_job.num_images_processed = processed
@@ -158,30 +198,60 @@ def run_semantic_search(
             # Por cada lote procesado por la red neuronal actualiza
             update_top_k()
 
-        # Recorremos las unidades de forma perezosa: cada una se resuelve por caché o se
-        # acumula para el siguiente lote, sin materializar el escaneo completo en memoria.
-        for unit in source.iter_scan_units(folder, model):
+        # Los grupos válidos se leen directamente desde SQLite. Solo un miss materializa
+        # sus ScanUnit, lo que evita abrir o decodificar imágenes cacheadas (también tiled).
+        for path, file_size, file_mtime_ns, expected_units, cache_hit in scan_plan:
             if search_job.status == "cancelled":
                 logger.info(
                     f"[search {search_job.id}] cancelled during scan ({processed}/{num_units} unit(s) scanned)."
                 )
                 break
 
-            if cache.is_scanned(unit.id):
-                num_cache_hits += 1
-                consider_unit(unit.id, unit.group_key, cache.get_cached(unit.id))
-                processed += 1
-                search_job.num_images_processed = processed
+            cache_group_key = str(path)
+            if cache_hit:
+                cached_units = cache.get_cached_group(cache_group_key)
+                if len(cached_units) == expected_units:
+                    for unit_id, detections in cached_units:
+                        consider_unit(unit_id, cache_group_key, detections)
+                        processed += 1
+                        num_cache_hits += 1
+                        search_job.num_images_processed = processed
+                        if processed % 50 == 0:
+                            update_top_k()
+                    continue
 
-                # Emitimos resultados parciales de la caché (cada 50 iteraciones porque la caché es muy rápida)
-                if processed % 50 == 0:
-                    update_top_k()
+                logger.warning(
+                    f"[search {search_job.id}] invalid cache manifest for '{cache_group_key}': "
+                    f"expected {expected_units} unit(s), found {len(cached_units)}"
+                )
+                replacement_count = source.get_num_units_for_group(path, model)
+                num_units += replacement_count - expected_units
+                search_job.num_images_total = num_units
+                expected_units = replacement_count
 
+            cache.invalidate_group(cache_group_key)
+            incomplete_groups[cache_group_key] = [expected_units, expected_units]
+            group_file_stats[cache_group_key] = (file_size, file_mtime_ns)
+            if expected_units == 0:
+                cache.mark_group_complete(cache_group_key, file_size, file_mtime_ns, 0)
                 continue
 
-            pending.append(unit)
-            if len(pending) >= _BATCH_SIZE:
-                flush_pending()
+            generated_units = 0
+            for unit in source.iter_scan_units_for_group(path, model):
+                if search_job.status == "cancelled":
+                    break
+                pending.append((unit, cache_group_key))
+                generated_units += 1
+                if len(pending) >= _BATCH_SIZE:
+                    flush_pending()
+
+            if search_job.status == "cancelled":
+                break
+            if generated_units != expected_units:
+                raise ValueError(
+                    f"Semantic-search source counted {expected_units} unit(s) for '{path}' "
+                    f"but generated {generated_units}"
+                )
 
         # Último lote incompleto (descartamos lo pendiente si se ha cancelado la búsqueda)
         if search_job.status != "cancelled":

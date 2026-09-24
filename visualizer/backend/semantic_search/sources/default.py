@@ -22,7 +22,6 @@ from visualizer.backend.semantic_search.sources.basesource import (
     BaseSemanticSearchSource,
     ScanUnit,
     SearchResultPreview,
-    iter_image_files,
 )
 
 if TYPE_CHECKING:
@@ -50,22 +49,21 @@ class DefaultImageSource(BaseSemanticSearchSource):
     as before this source-based refactor.
     """
 
-    def get_num_units(self, folder: Path, model: "BaseModel | None" = None) -> int:
-        """Count the supported image files under *folder* (one scan unit each).
+    def get_num_units_for_group(self, path: Path, model: "BaseModel | None" = None) -> int:
+        """Return one scan unit for a supported source image.
 
-        No image is opened -- only directory entries are inspected.
+        The image is not opened.
         """
-        return sum(1 for _ in iter_image_files(folder))
+        return 1
 
-    def iter_scan_units(self, folder: Path, model: "BaseModel | None" = None) -> Iterator[ScanUnit]:
-        """Yield one :class:`ScanUnit` per supported image file under *folder*.
+    def iter_scan_units_for_group(self, path: Path, model: "BaseModel | None" = None) -> Iterator[ScanUnit]:
+        """Yield the single :class:`ScanUnit` for *path*.
 
         ``model`` is unused here (every image is fed to the model at its own native size, unlike a tiled source which
         needs to know the model's input resolution up front).
         """
-        for path in iter_image_files(folder):
-            image_path = str(path)
-            yield ScanUnit(id=image_path, group_key=image_path, inference_input=path)
+        image_path = str(path)
+        yield ScanUnit(id=image_path, group_key=image_path, inference_input=path)
 
     def render_result_preview(self, result) -> SearchResultPreview:
         """Return the raw bytes of the original image file referenced by *result*.

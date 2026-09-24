@@ -53,7 +53,6 @@ class BaseSemanticSearchSource(ABC):
     ``engine.py``.
     """
 
-    @abstractmethod
     def get_num_units(self, folder: Path, model: BaseModel | None = None) -> int:
         """Count the units :meth:`iter_scan_units` would yield for *folder*.
 
@@ -72,8 +71,8 @@ class BaseSemanticSearchSource(ABC):
         Returns:
             The total number of scan units under *folder*.
         """
+        return sum(self.get_num_units_for_group(path, model) for path in self.iter_group_paths(folder))
 
-    @abstractmethod
     def iter_scan_units(self, folder: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
         """Enumerate the units of work to run inference on, under *folder*.
 
@@ -88,6 +87,59 @@ class BaseSemanticSearchSource(ABC):
         Yields:
             One :class:`ScanUnit` per piece of work (e.g. one per image, or one per tile).
         """
+        for path in self.iter_group_paths(folder):
+            yield from self.iter_scan_units_for_group(path, model)
+
+    def iter_group_paths(self, folder: Path) -> Iterator[Path]:
+        """Yield source-image paths without opening or decoding their contents.
+
+        Args:
+            folder: Root folder selected for semantic search.
+
+        Yields:
+            Paths used as cache groups.
+        """
+        yield from iter_image_files(folder)
+
+    @abstractmethod
+    def get_num_units_for_group(self, path: Path, model: BaseModel | None = None) -> int:
+        """Count scan units for one source image.
+
+        This method is only called for an uncached or changed image, so implementations
+        may inspect its header when the unit count depends on image dimensions.
+
+        Args:
+            path: Source image path.
+            model: Model whose input properties may determine the unit count.
+
+        Returns:
+            Number of scan units generated for the image.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def iter_scan_units_for_group(self, path: Path, model: BaseModel | None = None) -> Iterator[ScanUnit]:
+        """Yield inference units for one uncached or changed source image.
+
+        Args:
+            path: Source image path.
+            model: Model used to configure source-specific processing.
+
+        Yields:
+            Scan units belonging to ``path``.
+        """
+        raise NotImplementedError
+
+    def cache_signature(self, model: BaseModel | None = None) -> str:
+        """Return a stable identity for cache-affecting source configuration.
+
+        Args:
+            model: Model whose input properties may affect generated units.
+
+        Returns:
+            Stable source configuration signature.
+        """
+        return f"{type(self).__module__}.{type(self).__qualname__}:v1"
 
     def process_batch(self, model: "BaseModel", batch: list[ScanUnit]) -> list[list[tuple[Prediction, list[float]]]]:
         """Run *model* over one batch of scan units and return per-unit detections.
@@ -130,6 +182,7 @@ class BaseSemanticSearchSource(ABC):
             A :class:`SearchResultPreview` with the preview bytes/media type and the
             detection's bbox translated into that preview's local coordinate space.
         """
+        raise NotImplementedError
 
 
 __all__ = ["BaseSemanticSearchSource", "ScanUnit", "SearchResultPreview", "iter_image_files"]
