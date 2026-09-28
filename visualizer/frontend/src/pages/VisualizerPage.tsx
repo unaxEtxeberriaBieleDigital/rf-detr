@@ -60,7 +60,7 @@ export default function VisualizerPage() {
     return text.includes("job not found") || text.includes("failed (404)");
   }
 
-  async function recoverJobForDataset(): Promise<string> {
+  async function recoverJobForDataset(): Promise<{ id: string; categories: Record<number, string> }> {
     if (!config) throw new Error("No config available to recover job.");
     const recovered = await loadJob(config.datasetPath);
     setConfig({
@@ -70,7 +70,7 @@ export default function VisualizerPage() {
       hasDimensionalityReduction: recovered.has_dimensionality_reduction,
       dimensionalityReductionComponents: recovered.dimensionality_reduction_components,
     });
-    return recovered.id;
+    return { id: recovered.id, categories: recovered.categories };
   }
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function VisualizerPage() {
         if (controller.signal.aborted) return;
         setRecords(all);
         setPlotRecords(all);
-        await calculateOptimalClassThresholds(config.jobId, all, controller.signal);
+        await calculateOptimalClassThresholds(config.jobId, all, config.categories, controller.signal);
       })
       .catch(async (e) => {
         if (e.name === 'AbortError' || e.name === 'CancelledError') {
@@ -105,12 +105,12 @@ export default function VisualizerPage() {
         if (!isJobNotFoundError(e)) {
           throw e;
         }
-        const recoveredJobId = await recoverJobForDataset();
-        const all = await getAllRecords(recoveredJobId, controller.signal);
+        const recovered = await recoverJobForDataset();
+        const all = await getAllRecords(recovered.id, controller.signal);
         if (controller.signal.aborted) return;
         setRecords(all);
         setPlotRecords(all);
-        await calculateOptimalClassThresholds(recoveredJobId, all, controller.signal);
+        await calculateOptimalClassThresholds(recovered.id, all, recovered.categories, controller.signal);
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => {
@@ -167,12 +167,15 @@ export default function VisualizerPage() {
   async function calculateOptimalClassThresholds(
     jobId: string,
     allRecords: EmbeddingRecordDTO[],
+    categories: Record<number, string>,
     signal: AbortSignal,
   ): Promise<void> {
+    // The model may predict class ids absent from the dataset categories; the backend rejects those.
+    const knownClassIds = new Set(Object.keys(categories).map(Number));
     const classIds = [...new Set(
       allRecords
         .map((record) => record.prediction?.class_id)
-        .filter((classId): classId is number => classId !== undefined),
+        .filter((classId): classId is number => classId !== undefined && knownClassIds.has(classId)),
     )];
     const results = await Promise.all(
       classIds.map(async (classId) => {
@@ -206,7 +209,7 @@ export default function VisualizerPage() {
         await computeReduction(activeJobId, pcaDims, algorithm, ids);
       } catch (e) {
         if (!isJobNotFoundError(e)) throw e;
-        activeJobId = await recoverJobForDataset();
+        activeJobId = (await recoverJobForDataset()).id;
         await computeReduction(activeJobId, pcaDims, algorithm, ids);
       }
       setConfig({
