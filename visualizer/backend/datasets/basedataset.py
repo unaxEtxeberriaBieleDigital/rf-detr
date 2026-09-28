@@ -10,8 +10,11 @@ from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
 
+from rfdetr.utilities.logger import get_logger
 from visualizer.backend.metrics.base_metrics import MetricsCalculator
 from visualizer.backend.shared_types.prediction import Prediction
+
+logger = get_logger()
 
 SUPPORTED_ANNOTATIONS = """
 * COCO: only under the name of _annotations.coco.json
@@ -104,27 +107,58 @@ class BaseDataset(ABC):
         return splits
 
     def _get_categories(self, path: Path) -> dict[int, str]:
-        categories: dict[int, str] | None = None
+        """Return the dataset categories, always taken from the training split.
+
+        The training split defines the classes the model was trained on, so it is
+        the canonical source. Other splits are only checked for consistency.
+
+        Args:
+            path: Root path of the dataset.
+
+        Returns:
+            Mapping from category id to category name.
+
+        Raises:
+            Exception: If the training split has no ``_annotations.coco.json``.
+        """
+        train_path = self.splits.get(Split.TRAIN)
+        train_annotations = train_path / "_annotations.coco.json" if train_path is not None else None
+        if train_annotations is None or not train_annotations.exists():
+            raise Exception(
+                "The dataset does not have supported annotations in the training split "
+                "(expected 'train/_annotations.coco.json')"
+            )
+
+        categories = self._read_categories(train_annotations)
 
         for split_type, split_path in self.splits.items():
+            if split_type == Split.TRAIN:
+                continue
             annotations = split_path / "_annotations.coco.json"
-
             if not annotations.exists():
                 continue
+            split_categories = self._read_categories(annotations)
+            if split_categories != categories:
+                logger.warning(
+                    f"Category definitions of split '{split_type.name}' differ from the training split; "
+                    "using the training split categories."
+                )
 
-            with open(annotations, "r", encoding="utf-8") as f:
-                coco = json.load(f)
-
-            current_categories = {cat["id"]: cat["name"] for cat in coco["categories"]}
-
-            if categories is None:
-                categories = current_categories
-            elif categories != current_categories and split_type != Split.TRAIN:
-                raise Exception(f"Category definitions differ between dataset splits ({split_type.name})")
-
-        if categories is None:
-            raise Exception("The dataset does not have supported annotations")
         return categories
+
+    @staticmethod
+    def _read_categories(annotations: Path) -> dict[int, str]:
+        """Read the category mapping from a COCO annotations file.
+
+        Args:
+            annotations: Path to a ``_annotations.coco.json`` file.
+
+        Returns:
+            Mapping from category id to category name.
+        """
+        with open(annotations, "r", encoding="utf-8") as f:
+            coco = json.load(f)
+        return {cat["id"]: cat["name"] for cat in coco["categories"]}
 
     @abstractmethod
     def get_metrics_calculator(self) -> MetricsCalculator:
