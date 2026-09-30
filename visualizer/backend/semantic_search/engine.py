@@ -26,6 +26,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.models.basemodel import BaseModel
@@ -102,19 +103,23 @@ def run_semantic_search(
         scan_plan: list[tuple[Path, int, int, int, bool]] = []
         num_units = 0
         for path in source.iter_group_paths(folder):
-            stat = path.stat()
-            group_key = str(path)
-            manifest = manifests.get(group_key)
-            if (
-                manifest is not None
-                and manifest.file_size == stat.st_size
-                and manifest.file_mtime_ns == stat.st_mtime_ns
-            ):
-                cache_hit = True
-                unit_count = manifest.unit_count
-            else:
-                cache_hit = False
-                unit_count = source.get_num_units_for_group(path, model)
+            try:
+                stat = path.stat()
+                group_key = str(path)
+                manifest = manifests.get(group_key)
+                if (
+                    manifest is not None
+                    and manifest.file_size == stat.st_size
+                    and manifest.file_mtime_ns == stat.st_mtime_ns
+                ):
+                    cache_hit = True
+                    unit_count = manifest.unit_count
+                else:
+                    cache_hit = False
+                    unit_count = source.get_num_units_for_group(path, model)
+            except OSError as e:
+                logger.warning(f"[search {search_job.id}] skipping image '{path}': {e}")
+                continue
             scan_plan.append((path, stat.st_size, stat.st_mtime_ns, unit_count, cache_hit))
             num_units += unit_count
         search_job.num_images_total = num_units
@@ -156,6 +161,7 @@ def run_semantic_search(
 
         processed = 0
         num_cache_hits = 0
+        invalid_groups: set[str] = set()
 
         # Buffer de unidades pendientes de inferencia. Se vacía en cuanto llega a
         # _BATCH_SIZE, de modo que nunca hay más de un lote de unidades en memoria.
@@ -168,21 +174,52 @@ def run_semantic_search(
             nonlocal processed
             if not pending:
                 return
-            batch_entries = list(pending)
+            all_batch_entries = list(pending)
+            batch_entries = all_batch_entries
             pending.clear()
-            batch_units = [unit for unit, _cache_group_key in batch_entries]
+            try:
+                batch_detections = source.process_batch(model, [entry[0] for entry in batch_entries])
+            except OSError:
+                # A batch-level image read error can be caused by one bad file. Retry per
+                # unit so valid inputs in the same batch are not lost with it.
+                batch_detections = []
+                valid_entries: list[tuple[ScanUnit, str]] = []
+                failed_entries: list[tuple[ScanUnit, str]] = []
+                for entry in batch_entries:
+                    unit, cache_group_key = entry
+                    try:
+                        unit_detections = source.process_batch(model, [unit])
+                    except OSError as e:
+                        if not _is_unreadable_image_file(unit.inference_input):
+                            raise
+                        logger.warning(f"[search {search_job.id}] skipping image '{cache_group_key}': {e}")
+                        invalid_groups.add(cache_group_key)
+                        cache.invalidate_group(cache_group_key)
+                        best_by_group.pop(unit.group_key, None)
+                        failed_entries.append(entry)
+                        continue
+                    if len(unit_detections) != 1:
+                        raise ValueError(
+                            f"Semantic-search source returned {len(unit_detections)} result sets for a single unit"
+                        )
+                    valid_entries.append(entry)
+                    batch_detections.extend(unit_detections)
+                for _, cache_group_key in failed_entries:
+                    incomplete_groups[cache_group_key][0] -= 1
+                batch_entries = valid_entries
 
-            batch_detections = source.process_batch(model, batch_units)
+            batch_units = [entry[0] for entry in batch_entries]
             if len(batch_detections) != len(batch_units):
                 raise ValueError(
                     f"Semantic-search source returned {len(batch_detections)} result sets "
                     f"for a batch of {len(batch_units)} units"
                 )
             for (unit, cache_group_key), detections in zip(batch_entries, batch_detections):
-                cache.store_unit(unit.id, cache_group_key, detections)
-                consider_unit(unit.id, unit.group_key, detections)
+                if cache_group_key not in invalid_groups:
+                    cache.store_unit(unit.id, cache_group_key, detections)
+                    consider_unit(unit.id, unit.group_key, detections)
                 incomplete_groups[cache_group_key][0] -= 1
-                if incomplete_groups[cache_group_key][0] == 0:
+                if incomplete_groups[cache_group_key][0] == 0 and cache_group_key not in invalid_groups:
                     file_size, file_mtime_ns = group_file_stats[cache_group_key]
                     cache.mark_group_complete(
                         cache_group_key,
@@ -191,7 +228,7 @@ def run_semantic_search(
                         incomplete_groups[cache_group_key][1],
                     )
 
-            processed += len(batch_units)
+            processed += len(all_batch_entries)
             search_job.num_images_processed = processed
             logger.info(f"[search {search_job.id}] {processed}/{num_units} unit(s) scanned")
 
@@ -209,6 +246,14 @@ def run_semantic_search(
 
             cache_group_key = str(path)
             if cache_hit:
+                try:
+                    path.stat()
+                except OSError as e:
+                    logger.warning(f"[search {search_job.id}] skipping image '{path}': {e}")
+                    num_units -= expected_units
+                    search_job.num_images_total = num_units
+                    cache.invalidate_group(cache_group_key)
+                    continue
                 cached_units = cache.get_cached_group(cache_group_key)
                 if len(cached_units) == expected_units:
                     for unit_id, detections in cached_units:
@@ -224,7 +269,14 @@ def run_semantic_search(
                     f"[search {search_job.id}] invalid cache manifest for '{cache_group_key}': "
                     f"expected {expected_units} unit(s), found {len(cached_units)}"
                 )
-                replacement_count = source.get_num_units_for_group(path, model)
+                try:
+                    replacement_count = source.get_num_units_for_group(path, model)
+                except OSError as e:
+                    logger.warning(f"[search {search_job.id}] skipping image '{path}': {e}")
+                    num_units -= expected_units
+                    search_job.num_images_total = num_units
+                    cache.invalidate_group(cache_group_key)
+                    continue
                 num_units += replacement_count - expected_units
                 search_job.num_images_total = num_units
                 expected_units = replacement_count
@@ -237,13 +289,24 @@ def run_semantic_search(
                 continue
 
             generated_units = 0
-            for unit in source.iter_scan_units_for_group(path, model):
-                if search_job.status == "cancelled":
-                    break
-                pending.append((unit, cache_group_key))
-                generated_units += 1
-                if len(pending) >= _BATCH_SIZE:
-                    flush_pending()
+            try:
+                for unit in source.iter_scan_units_for_group(path, model):
+                    if search_job.status == "cancelled":
+                        break
+                    pending.append((unit, cache_group_key))
+                    generated_units += 1
+                    if len(pending) >= _BATCH_SIZE:
+                        flush_pending()
+            except OSError as e:
+                if generated_units > 0:
+                    raise
+                logger.warning(f"[search {search_job.id}] skipping image '{path}': {e}")
+                num_units -= expected_units
+                search_job.num_images_total = num_units
+                cache.invalidate_group(cache_group_key)
+                incomplete_groups.pop(cache_group_key, None)
+                group_file_stats.pop(cache_group_key, None)
+                continue
 
             if search_job.status == "cancelled":
                 break
@@ -285,6 +348,18 @@ def _cosine_distance(query_vec: np.ndarray, query_norm: float, vec: np.ndarray) 
     vec_norm = float(np.linalg.norm(vec)) or 1.0
     similarity = float(np.dot(query_vec, vec) / (query_norm * vec_norm))
     return 1.0 - similarity
+
+
+def _is_unreadable_image_file(inference_input: str | Path | np.ndarray) -> bool:
+    """Return whether a path-like inference input cannot be decoded as an image."""
+    if not isinstance(inference_input, (str, Path)):
+        return False
+    try:
+        with Image.open(inference_input) as image:
+            image.load()
+    except OSError:
+        return True
+    return False
 
 
 __all__ = [
