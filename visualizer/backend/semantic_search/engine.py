@@ -289,21 +289,37 @@ def run_semantic_search(
                 continue
 
             generated_units = 0
+            generation_error: OSError | None = None
             try:
-                for unit in source.iter_scan_units_for_group(path, model):
-                    if search_job.status == "cancelled":
+                unit_iterator = iter(source.iter_scan_units_for_group(path, model))
+            except OSError as e:
+                generation_error = e
+            else:
+                while search_job.status != "cancelled":
+                    try:
+                        unit = next(unit_iterator)
+                    except StopIteration:
                         break
+                    except OSError as e:
+                        generation_error = e
+                        break
+
                     pending.append((unit, cache_group_key))
                     generated_units += 1
                     if len(pending) >= _BATCH_SIZE:
                         flush_pending()
-            except OSError as e:
-                if generated_units > 0:
-                    raise
-                logger.warning(f"[search {search_job.id}] skipping image '{path}': {e}")
-                num_units -= expected_units
+
+            if generation_error is not None:
+                logger.warning(f"[search {search_job.id}] skipping image '{path}': {generation_error}")
+                pending_for_group = sum(group_key == cache_group_key for _, group_key in pending)
+                pending[:] = [entry for entry in pending if entry[1] != cache_group_key]
+                processed += pending_for_group
+                num_units += generated_units - expected_units
                 search_job.num_images_total = num_units
+                search_job.num_images_processed = processed
                 cache.invalidate_group(cache_group_key)
+                best_by_group.pop(cache_group_key, None)
+                update_top_k()
                 incomplete_groups.pop(cache_group_key, None)
                 group_file_stats.pop(cache_group_key, None)
                 continue
