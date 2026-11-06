@@ -7,12 +7,15 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import inspect
 import math
 import random
+import sys
 import warnings
 from contextlib import nullcontext
+from functools import lru_cache
 from typing import Any, Callable, cast
 
 import torch
@@ -25,6 +28,7 @@ from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 
 from rfdetr._namespace import _namespace_from_configs
 from rfdetr.config import (
+    _MANAGED_SCHEDULER_DEFAULTS,
     ModelConfig,
     MultiScale,
     TrainConfig,
@@ -33,12 +37,21 @@ from rfdetr.config import (
     _resolve_native_optimizer,
 )
 from rfdetr.datasets.coco import compute_multi_scale_scales
+from rfdetr.models._defaults import MODEL_DEFAULTS
 from rfdetr.models.lwdetr import build_criterion_from_config, build_model_from_config
+from rfdetr.models.matcher import HungarianMatcher
 from rfdetr.models.weights import apply_lora, interpolate_position_embeddings, load_pretrain_weights
+from rfdetr.training.callbacks.best_model import BestModelCallback
 from rfdetr.training.callbacks.coco_eval import _get_ema_inner_module
 from rfdetr.training.cuda_graph_step import CudaGraphTrainingRunner
+from rfdetr.training.fused_adamw_ema import LIBDEVICE_FUNCTIONS, UNSUPPORTED_ADAMW_OPTIONS, FusedAdamWEMA
 from rfdetr.training.param_groups import (
+    _PARAM_GROUP_SETTINGS,
+    _apply_configured_param_group_settings,
     _build_param_dicts,
+    _configured_settings_fed_by,
+    _explicit_param_group_settings,
+    _resolve_resumed_param_group_settings,
     get_param_dict,
     regroup_unmerged_optimizer_state,
     regroup_unmerged_scheduler_kwargs,
@@ -78,6 +91,26 @@ def _is_builtin_fused_adamw(optimizer: object) -> bool:
         False
     """
     return isinstance(optimizer, str) and "." not in optimizer and optimizer.strip().lower() == "adamw"
+
+
+@lru_cache(maxsize=1)
+def _has_fused_adamw_ema_kernel() -> bool:
+    """Return whether this platform's Triton exposes every CUDA libdevice function the custom kernel calls."""
+    if sys.platform != "linux" or torch.version.hip is not None:
+        return False
+    try:
+        libdevice = importlib.import_module("triton.language.extra.cuda.libdevice")
+    except ModuleNotFoundError as exc:
+        if exc.name not in {
+            "triton",
+            "triton.language",
+            "triton.language.extra",
+            "triton.language.extra.cuda",
+            "triton.language.extra.cuda.libdevice",
+        }:
+            raise
+        return False
+    return all(hasattr(libdevice, name) for name in LIBDEVICE_FUNCTIONS)
 
 
 _FUSED_IGNORED_MSG = (
@@ -289,8 +322,8 @@ def _build_managed_scheduler(
 
     Preserves RF-DETR's built-in schedule: a linear warmup ramp over ``warmup_steps`` followed by
     either cosine annealing down to ``min_factor`` or a 10x step decay after ``lr_drop`` epochs. The
-    ``min_factor`` and ``lr_drop`` values are read from ``lr_scheduler_kwargs`` first (the current API),
-    falling back to the deprecated ``lr_min_factor`` / ``lr_drop`` fields.
+    ``min_factor`` and ``lr_drop`` values are read from ``lr_scheduler_kwargs``, falling back to
+    ``_MANAGED_SCHEDULER_DEFAULTS`` when a key is absent.
 
     Args:
         optimizer: The optimizer the scheduler drives.
@@ -305,8 +338,8 @@ def _build_managed_scheduler(
     kwargs = train_config.lr_scheduler_kwargs
     # Managed presets are always strings (guaranteed by the _is_managed_scheduler_name branch at the call site).
     preset = cast(str, train_config.lr_scheduler).strip().lower()
-    min_factor = float(kwargs.get("min_factor", train_config.lr_min_factor))
-    lr_drop = int(kwargs.get("lr_drop", train_config.lr_drop))
+    min_factor = float(kwargs.get("min_factor", _MANAGED_SCHEDULER_DEFAULTS["min_factor"]))
+    lr_drop = int(kwargs.get("lr_drop", _MANAGED_SCHEDULER_DEFAULTS["lr_drop"]))
 
     def lr_lambda(current_step: int) -> float:
         if current_step < warmup_steps:
@@ -360,9 +393,13 @@ class RFDETRModelModule(LightningModule):
     Args:
         model_config: Architecture configuration.
         train_config: Training hyperparameter configuration.
+        load_encoder_weights: Fetch the encoder's upstream pretrained weights when ``model_config`` has no
+            ``pretrain_weights``. Pass ``False`` when every weight is replaced right after construction.
     """
 
-    def __init__(self, model_config: ModelConfig, train_config: TrainConfig) -> None:
+    def __init__(
+        self, model_config: ModelConfig, train_config: TrainConfig, *, load_encoder_weights: bool = True
+    ) -> None:
         super().__init__()
         self.model_config = model_config
         self.train_config = train_config
@@ -377,7 +414,19 @@ class RFDETRModelModule(LightningModule):
         # step loop and the epoch-end hook. Defaults keep pre-configure behaviour (per-step stepping).
         self._lr_scheduler_interval: str = "step"
         self._lr_scheduler_monitor: str | None = None
+        # (initial_lr, weight_decay) of each parameter group as configure_optimizers() built it, and the explicit
+        # settings whose groups on_train_start() puts back over the ones a resumed checkpoint restores (#1613).
+        self._configured_param_group_settings: list[tuple[float, float | None]] = []
+        self._reapplied_param_group_settings: list[str] = []
+        self._restarts_groups_without_base: bool = False
         self._accumulated_box_normalizer: Tensor | None = None
+        # Set by _clip_manual_optimization_gradients (proof that on_before_optimizer_step actually ran
+        # for the current optimizer step) and checked/cleared by _step_optimizer. An optimizer whose
+        # step(closure=...) accepts but never calls the closure would otherwise silently skip clipping
+        # on the manual-optimization (keypoint) path; see _step_optimizer.
+        self._manual_clip_hook_fired: bool = False
+        # One-shot guard so the missing-hook warning below fires once per training run, not once per step.
+        self._manual_clip_hook_warned: bool = False
         # One-shot guard for the notice announcing that the "auto" validation-loss policy resolved to skipping the
         # loss; emitted from on_validation_epoch_start on the first real (non-sanity) validation epoch only.
         self._logged_val_loss_skip_notice: bool = False
@@ -396,12 +445,20 @@ class RFDETRModelModule(LightningModule):
         # Compilation can remain enabled after the narrower Inductor graph-tree gate declines a request.
         # Keep this separate so the eager runner never captures an OptimizedModule in a compile-only fallback.
         self._compile_active: bool = False
+        # Epoch running sums (float32, weighted by batch size) and sample counts of the progress-bar loss terms.
+        self._progress_loss_sums: dict[str, Tensor] = {}
+        self._progress_sample_counts: dict[str, int] = {}
         # Allow partial state-dict loading when resuming from a .pth checkpoint
         # (which contains only model weights, not criterion/postprocess state).
         self.strict_loading = False
 
         # Model, criterion, and postprocessor.
-        self.model = build_model_from_config(model_config, train_config)
+        # load_encoder_weights=False skips fetching upstream encoder weights (DINOv2, or a registered encoder's) for a
+        # model whose weights are about to be replaced anyway, e.g. RFDETR.evaluate()'s transplant.
+        defaults = (
+            MODEL_DEFAULTS if load_encoder_weights else dataclasses.replace(MODEL_DEFAULTS, force_no_pretrain=True)
+        )
+        self.model = build_model_from_config(model_config, train_config, defaults=defaults)
         if model_config.pretrain_weights is not None:
             # Canonical loader handles PE interpolation, PTL .ckpt normalisation,
             # per-group query slicing, class-name extraction, partial-load warnings,
@@ -416,6 +473,7 @@ class RFDETRModelModule(LightningModule):
                         "Reset keypoint Gaussian precision outputs to unit values after pretrained weight load."
                     )
         if model_config.backbone_lora:
+            # No-op when load_pretrain_weights already wrapped the encoder to load a LoRA checkpoint.
             apply_lora(self.model)
 
         # Build criterion/postprocessors after potential num_classes alignment so
@@ -445,15 +503,22 @@ class RFDETRModelModule(LightningModule):
                 accelerator,
             )
         if compile_enabled:
-            # dynamic=True: one compiled graph handles all multi-scale input sizes instead
-            # of recompiling per (H, W) pair. Positional interpolation has its own eager
-            # boundary for unsupported symbolic bicubic backward. Do not suppress other
-            # compiler errors: nested retries can flood logs and conceal lost acceleration.
-            # capture_scalar_outputs=True: include Tensor.item() calls
-            # (gen_encoder_output_proposals / ms_deform_attn use spatial-shape .item()
-            # as Python slice indices). Safe with dynamic=True because item() results
-            # are backed symbols derived from input shapes — not unbacked symbols that
-            # would cause PendingUnbackedSymbolNotFound (which only occurs without dynamic).
+            # Dynamic shapes let one graph handle all multi-scale input sizes instead of
+            # recompiling per (H, W) pair. The backbone projector is the exception on CUDA:
+            # Inductor's convolution-backward lowering (pytorch/pytorch#178945) pins the strides of
+            # convolutions that need an input gradient, so that frame still recompiles per size up
+            # to Dynamo's recompile limit. Past that limit the resolutions still unseen run the
+            # projector eager, while the sizes compiled before it keep their graphs and the rest of
+            # the model stays compiled at every scale. Fixed-resolution training uses a static graph
+            # so Inductor can specialize dimensions that stay fixed across training batches
+            # (a validation batch of another shape recompiles once). Positional
+            # interpolation has its own eager boundary for unsupported symbolic bicubic backward.
+            # Do not suppress other compiler errors: nested retries can flood logs and conceal
+            # lost acceleration.
+            # capture_scalar_outputs=True: include Tensor.item() calls. The per-level spatial
+            # shapes reach gen_encoder_output_proposals and ms_deform_attn as Python ints
+            # (spatial_shapes_hw), which are symbols under dynamic tracing and constants in a
+            # static specialization.
             torch._dynamo.config.capture_scalar_outputs = True
             # Inductor's coalesce tiling analysis is unsupported on the dynamic-shape path
             # (torch/_inductor/config.py: "coalesce_tiling_analysis does not yet apply to
@@ -491,10 +556,35 @@ class RFDETRModelModule(LightningModule):
                         "validated for single-GPU detection training without gradient accumulation.",
                         unsupported_reason,
                     )
+            # Duck-typed like the criterion capability probes below: test doubles and custom criteria
+            # need not expose a matcher at all.
+            matcher = getattr(self.criterion, "matcher", None)
+            if isinstance(matcher, HungarianMatcher):
+                # The matcher owns its compile recipe and builds the compiled cost lazily in the process that
+                # runs it, so spawn-based strategies can still pickle the criterion into their workers. It
+                # shares the model's Inductor options (the coalesce-tiling workaround applies to its dynamic
+                # graph too) and forces CUDA graph replay off on top of them itself.
+                matcher.enable_compiled_l1_cost(compile_options)
+                logger.info("Matcher L1 compilation enabled (dynamic shapes, no CUDA graphs; kernels compile on use).")
             # OptimizedModule forwards attribute access to the wrapped LWDETR via
             # __getattr__ at runtime, so self.model keeps working everywhere it's used below.
+            # Static specialization is measured only for the ordinary fixed-resolution detection compile path.
+            # Aspect-preserving resize (square_resize_div_64=False) pads each batch to its own (H, W),
+            # Inductor CUDA graphs keep their established recipe, and segmentation and keypoint models
+            # were not measured, so all of them stay on the dynamic compile.
+            dynamic_shapes = (
+                train_config.multi_scale is not MultiScale.OFF
+                or not train_config.square_resize_div_64
+                or bool(train_config.aug_config)
+                or model_config.cuda_graphs
+                or model_config.segmentation_head
+                or model_config.use_grouppose_keypoints
+            )
+            enable_compiled_losses = getattr(self.criterion, "enable_compiled_detection_losses", None)
+            if enable_compiled_losses is not None and not dynamic_shapes:
+                enable_compiled_losses()
             self.model = torch.compile(  # type: ignore[assignment]
-                self.model, dynamic=True, options=compile_options or None
+                self.model, dynamic=dynamic_shapes, options=compile_options or None
             )
             self._compile_active = True
 
@@ -557,11 +647,15 @@ class RFDETRModelModule(LightningModule):
             seed_everything(self.train_config.seed + self.global_rank, workers=True)
 
     def on_train_start(self) -> None:
-        """Configure the CUDA graph runner, then normalize restored fused-optimizer state.
+        """Configure the CUDA graph runner, then reconcile and normalize restored optimizer state.
 
         Device and world-size placement are only final once Lightning reaches this hook, so
         :meth:`_configure_cuda_graph_runner` is called first to decide, for this fit run, whether ``training_step``
         replays a captured graph or stays eager.
+
+        When the run resumed a checkpoint's optimizer state with a learning-rate or weight-decay setting passed
+        explicitly, :meth:`_reapply_configured_param_group_settings` then gives the parameter groups that setting feeds
+        the values this run configured.
 
         Lightning restores optimizer state after ``on_fit_start``.  Fused AdamW is strict about the dtype, device, and
         layout of its moment tensors, so resuming from a checkpoint can fail if Lightning rehydrates those tensors in a
@@ -569,6 +663,9 @@ class RFDETRModelModule(LightningModule):
         resumed optimizer compatible without discarding the saved momentum state.
         """
         self._configure_cuda_graph_runner()
+        if self._reapplied_param_group_settings:
+            self._reapply_configured_param_group_settings()
+            self._reapplied_param_group_settings = []
 
         if not self._use_fused_optimizer:
             return
@@ -594,6 +691,58 @@ class RFDETRModelModule(LightningModule):
             logger.info(
                 "Normalized %d restored fused AdamW state tensors after checkpoint resume.",
                 normalized_tensors,
+            )
+
+    def _reapply_configured_param_group_settings(self) -> None:
+        """Give the optimizer restored from a checkpoint the learning rates and weight decay this run configured.
+
+        ``trainer.fit(ckpt_path=...)`` restores them from the checkpoint after :meth:`configure_optimizers` built them
+        from ``train_config``, which used to drop a changed ``lr`` without a word (#1613). Only the groups that a
+        setting passed explicitly feeds change: the rest keep what the checkpoint's optimizer holds, which the ``args``
+        a resume hit by #1613 recorded may not match. Momentum and the schedule's progress carry over; see
+        :func:`~rfdetr.training.param_groups._apply_configured_param_group_settings`.
+        """
+        optimizer = self.optimizers(use_pl_optimizer=False)
+        if not isinstance(optimizer, torch.optim.Optimizer) or len(self._configured_param_group_settings) != len(
+            optimizer.param_groups
+        ):
+            # A configure_optimizers of its own (a subclass, LightningCLI's --optimizer) recorded nothing to compare,
+            # and may return several optimizers.
+            if self.global_rank == 0:
+                logger.warning(
+                    "configure_optimizers was replaced (or the optimizer is not a torch.optim.Optimizer), so the "
+                    "resumed optimizer keeps the learning rates and weight decay it saved instead of the ones set for "
+                    "this run."
+                )
+            return
+        configured = _configured_settings_fed_by(
+            self._reapplied_param_group_settings,
+            self._configured_param_group_settings,
+            optimizer,
+            _namespace_from_configs(self.model_config, self.train_config),
+            lambda namespace: get_param_dict(namespace, getattr(self.model, "_orig_mod", self.model)),
+        )
+        if not any(setting is not None for pair in configured for setting in pair):
+            # No trainable parameter takes these settings (a frozen encoder drops the encoder's), or the optimizer
+            # holds parameters other than the model's own (FSDP and DeepSpeed flatten them), so no group could be
+            # matched with what a setting feeds, and the resumed values would pass unchanged.
+            if self.global_rank == 0:
+                logger.warning(
+                    "No parameter group of the resumed optimizer is fed by %s (no trainable parameter takes it, or the "
+                    "strategy replaced the model's parameters, as FSDP and DeepSpeed do), so it keeps the learning "
+                    "rates and weight decay it saved instead of the ones set for this run.",
+                    ", ".join(self._reapplied_param_group_settings),
+                )
+            return
+        changed = _apply_configured_param_group_settings(
+            optimizer,
+            self._current_lr_scheduler(),
+            configured,
+            restart_without_base=self._restarts_groups_without_base,
+        )
+        if changed and self.global_rank == 0:
+            logger.info(
+                "Gave the learning rate and weight decay set for this run to %d resumed parameter group(s).", changed
             )
 
     def _configure_cuda_graph_runner(self) -> None:
@@ -712,21 +861,25 @@ class RFDETRModelModule(LightningModule):
                 )
 
     def on_train_epoch_start(self) -> None:
-        """Reset the accumulated box normalizer at the start of every training epoch.
+        """Reset the per-epoch state at the start of every training epoch.
+
+        That state is the accumulated box normalizer and the progress-bar running means.
 
         Lightning may reuse the module across epochs without calling ``_step_optimizer`` at the boundary (for example
         when an epoch ends mid-accumulation window with a non-divisible batch count). Clearing the accumulator here
         guarantees the manual-optimization path always starts each epoch from a known state, so the first microbatch's
         gradients are scaled by its own box count and not by a stale previous-epoch denominator.
 
-        This is a no-op for non-keypoint models because they use Lightning's automatic optimization path and never
-        populate ``self._accumulated_box_normalizer``.
+        The box-normalizer reset is a no-op for non-keypoint models because they use Lightning's automatic optimization
+        path and never populate ``self._accumulated_box_normalizer``.
 
         Note: on finite datasets the final-batch fallback in ``_should_step_optimizer`` always flushes a partial
         trailing window, so this reset is the only change needed.  On IterableDatasets (infinite
         ``num_training_batches``) a partial window may survive epoch end with un-stepped gradients; those are
         discarded here and the optimizer is zeroed so the first microbatch of the new epoch starts from a clean state.
         """
+        self._progress_loss_sums = {}
+        self._progress_sample_counts = {}
         if self._accumulated_box_normalizer is not None:
             # Discard any partial accumulation window that survived the epoch boundary
             # (only possible for IterableDatasets where num_training_batches is infinite).
@@ -774,11 +927,10 @@ class RFDETRModelModule(LightningModule):
             loss_for_backward = None
         weight_dict = self.criterion.weight_dict
         loss: Tensor = torch.stack([loss_dict[k] * weight_dict[k] for k in loss_dict if k in weight_dict]).sum()
-        # Automatic optimization path: divide by accumulate_grad_batches so the accumulated
-        # gradient matches a single large batch, matching the legacy engine.  PTL accumulates
-        # full-scale gradients by default; dividing here keeps the effective LR identical.
-        accumulate_grad_batches = max(1, int(self.trainer.accumulate_grad_batches))
-        loss_for_return = loss if self._use_manual_optimization else loss / accumulate_grad_batches
+        # Automatic optimization path: return the loss unscaled. Lightning divides the returned loss by
+        # ``trainer.accumulate_grad_batches`` itself (``ClosureResult.from_training_step_output``) before
+        # ``backward()``, so the accumulated gradient already equals the mean over the window; dividing here as
+        # well scaled every accumulated gradient by ``1/N**2``. The manual path scales its own backward loss above.
         train_log_sync_dist = bool(self.train_config.train_log_sync_dist)
         train_log_on_step = bool(self.train_config.train_log_on_step)
         if self.train_config.compact_train_metrics:
@@ -843,11 +995,11 @@ class RFDETRModelModule(LightningModule):
                 }
                 results = self.postprocess(inference_outputs, orig_sizes)
             return {
-                "loss": loss_for_return.detach() if self._use_manual_optimization else loss_for_return,
+                "loss": loss.detach() if self._use_manual_optimization else loss,
                 "results": self._detach_results(results),
                 "targets": targets,
             }
-        return loss_for_return.detach() if self._use_manual_optimization else loss_for_return
+        return loss.detach() if self._use_manual_optimization else loss
 
     def _aux_aggregate_map(self, loss_dict: dict[str, Tensor], weight_dict: dict[str, float]) -> dict[str, str | None]:
         """Return the memoized ``loss_name -> aggregate train/ key`` map for the current loss_dict keys.
@@ -1018,11 +1170,56 @@ class RFDETRModelModule(LightningModule):
         self.log("train/lr_max", max(group_lrs), prog_bar=False, on_step=True, on_epoch=False)
 
     def _step_optimizer(self, optimizer: torch.optim.Optimizer | LightningOptimizer) -> None:
-        """Clip gradients, step optimizer and scheduler, then reset accumulation state.
+        """Step optimizer and scheduler, then reset accumulation state.
+
+        Gradient clipping is not done here: ``LightningOptimizer.step()`` reaches the precision plugin, which unscales
+        GradScaler-scaled gradients and then calls :meth:`on_before_optimizer_step`, where clipping happens.
+
+        That chain depends on ``optimizer.step()`` actually invoking the closure Lightning wraps around it: a
+        third-party optimizer whose ``step(closure=...)`` accepts but never calls the closure would silently skip
+        :meth:`on_before_optimizer_step` and therefore clipping, on the fp32/bf16-mixed path (fp16 with a
+        ``GradScaler`` calls the closure itself, so it is immune). ``_manual_clip_hook_fired`` is cleared here, set by
+        :meth:`_clip_manual_optimization_gradients` if the hook does run, and checked right after ``step()`` returns
+        so a silent skip surfaces as a one-time warning instead of a silently-unclipped run.
 
         Args:
             optimizer: Optimizer returned by Lightning.
         """
+        self._manual_clip_hook_fired = False
+        optimizer.step()
+        if (
+            not self._manual_clip_hook_fired
+            and not self._manual_clip_hook_warned
+            and self.train_config.clip_max_norm > 0
+        ):
+            self._manual_clip_hook_warned = True
+            logger.warning(
+                "Gradient clipping hook (on_before_optimizer_step) did not run during this optimizer step; "
+                "clip_max_norm=%s was not applied. The configured optimizer's step(closure=...) may not invoke "
+                "the closure Lightning provides, which this manual-optimization (keypoint) path relies on to "
+                "clip gradients. This warning fires once per run.",
+                self.train_config.clip_max_norm,
+            )
+        optimizer.zero_grad()
+        self._step_lr_scheduler()
+        self._accumulated_box_normalizer = None
+
+    def _clip_manual_optimization_gradients(self, optimizer: torch.optim.Optimizer) -> None:
+        """Clip gradients for the manual-optimization (keypoint) path.
+
+        ``TrainConfig.clip_max_norm`` is the value applied. Lightning's own configuration validator aborts at
+        ``fit()`` for any positive trainer-level ``gradient_clip_val`` under manual optimization, so only ``0``
+        (disable clipping) ever reaches this method through the trainer; a numeric override never does. Must only
+        run once gradients are unscaled, i.e. from :meth:`on_before_optimizer_step`.
+
+        Reaching this method at all — regardless of whether ``gradient_clip_val`` ends up positive — is the proof
+        that :meth:`on_before_optimizer_step` fired for this optimizer step, so ``_manual_clip_hook_fired`` is set
+        unconditionally; see :meth:`_step_optimizer`.
+
+        Args:
+            optimizer: Optimizer about to update model parameters.
+        """
+        self._manual_clip_hook_fired = True
         trainer_gradient_clip_val = getattr(self.trainer, "gradient_clip_val", None)
         if trainer_gradient_clip_val is None:
             gradient_clip_val = self.train_config.clip_max_norm
@@ -1034,15 +1231,11 @@ class RFDETRModelModule(LightningModule):
         if not isinstance(gradient_clip_algorithm, str):
             gradient_clip_algorithm = None
         if gradient_clip_val is not None and gradient_clip_val > 0:
-            self.clip_gradients(
+            self.configure_gradient_clipping(
                 optimizer,
                 gradient_clip_val=gradient_clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm,
             )
-        optimizer.step()
-        optimizer.zero_grad()
-        self._step_lr_scheduler()
-        self._accumulated_box_normalizer = None
 
     def _current_lr_scheduler(self) -> LRScheduler | ReduceLROnPlateau | None:
         """Return the single configured LR scheduler, or ``None`` when none is available.
@@ -1073,16 +1266,27 @@ class RFDETRModelModule(LightningModule):
         scheduler.step()
 
     def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
-        """Log rates immediately before each Lightning-managed optimizer step.
+        """Log rates and, under manual optimization, clip gradients before each optimizer step.
 
         Lightning invokes this hook for both automatic-optimization and
         manual-optimization (keypoint) training paths, so it is the sole
-        emission site for learning-rate logging on either path.
+        emission site for learning-rate logging on either path. In the keypoint
+        path, XLA included, Lightning callback hooks run before this module hook
+        clips gradients, so callbacks observe the unclipped gradients as they do
+        on the automatic-optimization path.
+
+        Lightning's precision plugins call this hook after the backward closure. ``MixedPrecision`` with a GradScaler
+        (fp16) calls it right after ``scaler.unscale_()``; XLA calls it after reducing gradients across devices and
+        does not rely on GradScaler. The manual path therefore clips true gradients, including reduced XLA gradients.
+        Clipping before ``optimizer.step()`` would clip scaled fp16 gradients and the optimizer would receive
+        ``clip_max_norm / scale``. The automatic path is clipped by Lightning after this hook returns.
 
         Args:
             optimizer: Optimizer about to update model parameters.
         """
         self._log_learning_rates(optimizer)
+        if not self.automatic_optimization:
+            self._clip_manual_optimization_gradients(optimizer)
 
     def on_train_epoch_end(self) -> None:
         """Step epoch-interval (non-plateau) schedulers on the manual-optimization path.
@@ -1173,33 +1377,40 @@ class RFDETRModelModule(LightningModule):
         *,
         batch_size: int,
     ) -> None:
-        """Log compact per-step convergence metrics for the progress bar only.
+        """Log the epoch running mean of the convergence metrics shown on the progress bar.
+
+        Each term shows the mean of every step since the epoch started, weighted by batch size, so one noisy batch
+        does not hide the trend. The sums stay on the device and are detached, so this adds no host sync. With
+        ``train_log_on_step=True`` every term is logged per batch and no running sums are kept.
 
         Args:
             loss: Unscaled aggregate training loss.
             loss_dict: Raw criterion loss dictionary.
-            batch_size: Current batch size used by Lightning for metric reduction metadata.
+            batch_size: Current batch size, used as the weight of this step in the running mean.
         """
         # When ``train_log_on_step`` is True, the ``train/loss`` call in ``training_step``
         # logs with ``on_step=True, on_epoch=True``; Lightning forks that into
         # ``train/loss_step`` + ``train/loss_epoch``, and ``train/loss_step`` already
-        # provides the live per-step progress-bar view. Emitting this separate ``loss``
-        # scalar in that case just duplicates it, so only log it on the default
-        # ``train_log_on_step=False`` path.
-        if not bool(self.train_config.train_log_on_step):
-            self.log(
-                "loss",
-                loss,
-                prog_bar=True,
-                logger=False,
-                on_step=True,
-                on_epoch=False,
-                batch_size=batch_size,
-            )
+        # shows the per-batch aggregate on the bar. ``train_log_on_step=True`` asks for per-step values,
+        # so every progress term is logged per batch in that mode.
+        train_log_on_step = bool(self.train_config.train_log_on_step)
+        progress_values: dict[str, Tensor] = {}
+        if not train_log_on_step:
+            progress_values["loss"] = loss
         for loss_name, progress_name in _TRAIN_PROGRESS_LOSS_ALIASES.items():
             value = loss_dict.get(loss_name)
-            if value is None:
-                continue
+            if value is not None:
+                progress_values[progress_name] = value
+        for progress_name, value in progress_values.items():
+            if not train_log_on_step:
+                # float32 accumulation: a low-precision running sum drifts over thousands of steps.
+                weighted = value.detach().float() * batch_size
+                running_sum = self._progress_loss_sums.get(progress_name)
+                total = weighted if running_sum is None else running_sum + weighted
+                self._progress_loss_sums[progress_name] = total
+                sample_count = self._progress_sample_counts.get(progress_name, 0) + batch_size
+                self._progress_sample_counts[progress_name] = sample_count
+                value = total / sample_count
             self.log(
                 progress_name,
                 value,
@@ -1269,6 +1480,26 @@ class RFDETRModelModule(LightningModule):
                 return ema_inner.model
         return self.model
 
+    def _eval_forward(self, model: Any, samples: Any, *, for_loss: bool) -> Any:
+        """Forward an eval batch, asking a segmentation model for every layer's masks only when a loss follows.
+
+        In eval mode ``LWDETR`` computes the segmentation masks of the last decoder layer alone, which is all the
+        postprocessor reads. The criterion also reads the auxiliary-layer and encoder-proposal masks, so a loss on
+        eval outputs passes ``all_layer_masks=True`` to a model with a segmentation head. Any other model, such as a
+        detection ``LWDETR`` or a stand-in whose forward takes the images alone, is called exactly as before.
+
+        Args:
+            model: The model to forward through: the base model, its ``torch.compile`` wrapper or the EMA model.
+            samples: The batched images.
+            for_loss: Whether the criterion runs on the returned outputs.
+
+        Returns:
+            The model outputs.
+        """
+        if for_loss and getattr(model, "segmentation_head", None) is not None:
+            return model(samples, all_layer_masks=True)
+        return model(samples)
+
     def validation_step(self, batch: tuple[Any, Any], batch_idx: int) -> dict[str, Any]:
         """Run forward pass and postprocess for one validation step.
 
@@ -1287,8 +1518,9 @@ class RFDETRModelModule(LightningModule):
             # Same reason as in training_step: with eval_base_model=True or use_ema=False the
             # compiled model runs here and records its own eval-mode graph.
             torch.compiler.cudagraph_mark_step_begin()  # type: ignore[no-untyped-call]
-        outputs = self._resolve_eval_model()(samples)
-        if self._should_compute_val_loss:
+        compute_loss = self._should_compute_val_loss
+        outputs = self._eval_forward(self._resolve_eval_model(), samples, for_loss=compute_loss)
+        if compute_loss:
             loss_dict = self.criterion(outputs, targets)
             weight_dict = self.criterion.weight_dict
             loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict if k in weight_dict)
@@ -1358,6 +1590,10 @@ class RFDETRModelModule(LightningModule):
         custom-optimizer path can tell whether a dropped ``fused_optimizer=True``
         would actually have mattered.
 
+        Invariant: this precision gate is what makes the unscale-free ``clip_grad_norm_`` call in
+        :meth:`configure_gradient_clipping`'s fused branch correct — BF16 never runs through a ``GradScaler``, so
+        the gradients ``_use_fused_optimizer`` gates behind this check are never scaled in the first place.
+
         Returns:
             ``True`` when fused AdamW is requested and the runtime supports it.
         """
@@ -1395,6 +1631,32 @@ class RFDETRModelModule(LightningModule):
             return False
         return _is_builtin_fused_adamw(self.train_config.optimizer)
 
+    @property
+    def _use_fused_adamw_ema(self) -> bool:
+        """Return whether the measured combined CUDA training update is applicable."""
+        tc = self.train_config
+        runtime_world_size = getattr(self.trainer, "world_size", None)
+        if isinstance(runtime_world_size, int) and runtime_world_size != 1:
+            return False
+        strategy_name = type(getattr(self.trainer, "strategy", None)).__name__.lower()
+        if any(distributed in strategy_name for distributed in ("ddp", "fsdp", "deepspeed", "xla")):
+            return False
+        return (
+            self._use_fused_optimizer
+            and self._compile_active
+            and tc.use_ema
+            and tc.ema_update_interval == 1
+            and not any(tc.optimizer_kwargs.get(option) for option in UNSUPPORTED_ADAMW_OPTIONS)
+            and tc.devices == 1
+            and tc.num_nodes == 1
+            and tc.strategy == "auto"
+            and not self.model_config.segmentation_head
+            and not self.model_config.use_grouppose_keypoints
+            and not self.model_config.cuda_graphs
+            and str(self.trainer.precision) == "bf16-mixed"
+            and _has_fused_adamw_ema_kernel()
+        )
+
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """Build the configured optimizer with layer-wise LR decay and scheduler.
 
@@ -1418,15 +1680,32 @@ class RFDETRModelModule(LightningModule):
         optimizer_cfg = tc.optimizer
         optimizer: torch.optim.Optimizer
         if _is_builtin_fused_adamw(optimizer_cfg):
-            # Built-in managed fused AdamW path (unchanged behavior).
+            # Built-in managed AdamW path.
             try:
-                optimizer = torch.optim.AdamW(
-                    param_dicts,
-                    lr=tc.lr,
-                    weight_decay=tc.weight_decay,
-                    fused=self._use_fused_optimizer,
-                    **tc.optimizer_kwargs,
-                )
+                if self._use_fused_adamw_ema:
+                    optimizer = FusedAdamWEMA(
+                        param_dicts,
+                        named_parameters=dict(model_for_params.named_parameters()),
+                        model_buffers=dict(model_for_params.named_buffers()),
+                        max_grad_norm=tc.clip_max_norm,
+                        ema_decay=tc.ema_decay,
+                        ema_tau=tc.ema_tau,
+                        lr=tc.lr,
+                        weight_decay=tc.weight_decay,
+                        **tc.optimizer_kwargs,
+                    )
+                    logger.info(
+                        "Combined Triton training update enabled (global-norm clipping + AdamW + EMA); "
+                        "unsupported layouts fall back to clipped, non-fused AdamW for that step."
+                    )
+                else:
+                    optimizer = torch.optim.AdamW(
+                        param_dicts,
+                        lr=tc.lr,
+                        weight_decay=tc.weight_decay,
+                        fused=self._use_fused_optimizer,
+                        **tc.optimizer_kwargs,
+                    )
             except TypeError as exc:
                 raise TypeError(
                     f"Failed to initialize optimizer 'adamw': {exc}. "
@@ -1538,6 +1817,13 @@ class RFDETRModelModule(LightningModule):
 
         self._lr_scheduler_interval = interval
         self._lr_scheduler_monitor = monitor
+        # Every LRScheduler records each group's base as initial_lr; ReduceLROnPlateau does not, and a resumed run
+        # needs it to carry the plateau's reductions over to a changed lr.
+        for group in optimizer.param_groups:
+            group.setdefault("initial_lr", group["lr"])
+        self._configured_param_group_settings = [
+            (group["initial_lr"], group.get("weight_decay")) for group in optimizer.param_groups
+        ]
 
         lr_scheduler_config: LRSchedulerConfigType = {"scheduler": scheduler, "interval": interval}
         if monitor is not None:
@@ -1547,31 +1833,51 @@ class RFDETRModelModule(LightningModule):
             "lr_scheduler": lr_scheduler_config,
         }
 
-    def clip_gradients(
+    def configure_gradient_clipping(
         self,
         optimizer: torch.optim.Optimizer | LightningOptimizer,
         gradient_clip_val: float | None = None,
         gradient_clip_algorithm: str | None = None,
     ) -> None:
-        """Override PTL gradient clipping to support fused AdamW.
+        """Override PTL's documented clipping hook to support fused AdamW.
 
-        PTL's AMP precision plugin refuses to clip gradients when the optimizer declares it handles unscaling internally
-        (fused=True).  When fused is active we are on BF16 (no GradScaler) so ``clip_grad_norm_`` is correct.  For the
-        non-fused path (FP16 + GradScaler or FP32) we delegate to ``super()`` to preserve scaler-aware unscaling.
+        ``LightningModule.clip_gradients`` is explicitly documented as "do not override this method"; PTL calls
+        this hook instead (from the automatic-optimization closure and, on the manual path, from
+        :meth:`_clip_manual_optimization_gradients`). PTL's AMP precision plugin refuses to clip gradients when the
+        optimizer declares it handles unscaling internally (fused=True). When fused is active we are on BF16 (no
+        GradScaler) so ``clip_grad_norm_`` is correct. For the non-fused path (FP16 + GradScaler or FP32) we
+        delegate to :meth:`clip_gradients`, the un-overridden base implementation, which clips the gradients as they
+        are and does not unscale them. Under FP16 it must therefore only run after ``GradScaler.unscale_()``:
+        Lightning's own clipping on the automatic path, or :meth:`on_before_optimizer_step` on the manual path.
+
+        Canonical clipped-parameter set: the non-fused path clips ``optimizer.param_groups`` (via the base
+        ``clip_gradients``); the fused (non-EMA) branch below reads ``param_groups`` off the raw optimizer rather
+        than ``self.parameters()``, so both paths agree on which parameters the norm covers. The fused+EMA branch
+        delegates the norm to the fused kernel via ``set_max_grad_norm``, which tracks its own parameter set
+        internally — that branch's canonical set is whatever the kernel was constructed with, not
+        ``self.parameters()`` or ``optimizer.param_groups``.
 
         Args:
             optimizer: The current optimizer.
             gradient_clip_val: Maximum gradient norm.
-            gradient_clip_algorithm: Clipping algorithm; forwarded to super()
+            gradient_clip_algorithm: Clipping algorithm; forwarded to :meth:`clip_gradients`
                 for the non-fused path.
         """
+        if self._use_fused_adamw_ema:
+            raw_optimizer = getattr(optimizer, "optimizer", optimizer)
+            set_max_grad_norm = getattr(raw_optimizer, "set_max_grad_norm", None)
+            if callable(set_max_grad_norm):
+                set_max_grad_norm(gradient_clip_val)
+            return
         if self._use_fused_optimizer:
             if gradient_clip_val and gradient_clip_val > 0:
-                torch.nn.utils.clip_grad_norm_(self.parameters(), gradient_clip_val)
+                raw_optimizer = getattr(optimizer, "optimizer", optimizer)
+                fused_params = [param for group in raw_optimizer.param_groups for param in group["params"]]
+                torch.nn.utils.clip_grad_norm_(fused_params, gradient_clip_val)
         else:
             # PTL's own type stub only declares Optimizer here, but LightningOptimizer dynamically
             # multiply-inherits from the wrapped optimizer's class, so it satisfies this at runtime too.
-            super().clip_gradients(
+            self.clip_gradients(
                 optimizer,  # type: ignore[arg-type]
                 gradient_clip_val=gradient_clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm,
@@ -1621,8 +1927,9 @@ class RFDETRModelModule(LightningModule):
             Dict with ``results`` (postprocessed predictions) and ``targets``.
         """
         samples, targets = batch
-        outputs = self.model(samples)
-        if self.train_config.compute_test_loss:
+        compute_loss = self.train_config.compute_test_loss
+        outputs = self._eval_forward(self.model, samples, for_loss=compute_loss)
+        if compute_loss:
             loss_dict = self.criterion(outputs, targets)
             weight_dict = self.criterion.weight_dict
             loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict if k in weight_dict)
@@ -1649,10 +1956,41 @@ class RFDETRModelModule(LightningModule):
         orig_sizes = torch.stack([t["orig_size"] for t in targets])
         return self.postprocess(outputs, orig_sizes)
 
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Describe the model in every Lightning checkpoint the way the best ``.pth`` files do.
+
+        Lightning calls this hook for each ``.ckpt`` a ``Trainer`` writes for this module, such as ``last.ckpt`` and
+        ``checkpoint_<epoch>.ckpt`` during training. Without it they hold weights and optimizer state but no ``args``,
+        ``model_name`` or ``model_config``, and :meth:`rfdetr.detr.RFDETR.from_checkpoint` cannot rebuild the model they
+        hold (#1552). The keys and values are exactly the ones
+        :class:`~rfdetr.training.callbacks.best_model.BestModelCallback` writes into its ``.pth`` files: both go
+        through :meth:`~rfdetr.training.callbacks.best_model.BestModelCallback._model_description`, which also stores
+        a config value a weights-only ``torch.load`` cannot read as its ``repr`` so that
+        ``Trainer.fit(ckpt_path=...)`` can still resume from the file.
+
+        A ``*DeprecatedConfig`` is named rather than refused here, unlike in the callback's own ``.pth`` files:
+        ``RFDETRLargeDeprecated`` is supported until 2.0 and :meth:`rfdetr.detr.RFDETR.from_checkpoint` resolves that
+        name, so refusing it would leave a plain ``Trainer`` unable to write any checkpoint for a still-supported
+        model rather than one unable to describe it.
+
+        Args:
+            checkpoint: Checkpoint dict Lightning is about to save (mutated in-place).
+        """
+        # Sync the saved config from the weights this file stores. torch.compile nests them one level deeper.
+        model_state_dict = {
+            key.removeprefix("model.").removeprefix("_orig_mod."): value
+            for key, value in checkpoint["state_dict"].items()
+            if key.startswith("model.")
+        }
+        args_dict, model_name, model_config_dict = BestModelCallback._resolve_model_description(
+            self.trainer, self, model_state_dict, allow_deprecated=True
+        )
+        checkpoint.update(BestModelCallback._model_description(args_dict, model_name, model_config_dict))
+
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Auto-detect legacy formats and reconcile PE shapes at checkpoint load time.
 
-        PTL calls this hook before applying ``checkpoint["state_dict"]`` to the module.  Four normalisation steps are
+        PTL calls this hook before applying ``checkpoint["state_dict"]`` to the module.  Five normalisation steps are
         applied in order:
 
         1. **Raw legacy format** — a ``*.pth`` file loaded directly by
@@ -1678,6 +2016,13 @@ class RFDETRModelModule(LightningModule):
            :func:`~rfdetr.training.checkpoint.convert_legacy_checkpoint` that already has ``"state_dict"`` but also
            carries ``"legacy_ema_state_dict"``.  The EMA weights are stashed on ``self._pending_legacy_ema_state`` for
            optional restoration by :class:`~rfdetr.training.callbacks.ema.RFDETREMACallback`.
+
+        5. **Optimizer fused eligibility** — built-in AdamW parameter groups are reset to the live runtime's fused
+           eligibility before PyTorch loads saved group options. A combined-route checkpoint records ``fused=True``;
+           the destination's FP32 DDP route must keep ``fused=False``.
+
+        A checkpoint carrying optimizer state also orders the run's learning-rate and weight-decay settings as defaults,
+        then the checkpoint, then ``train_config``'s explicit values; see :meth:`_adopt_resumed_param_group_settings`.
 
         Note:
             This hook only fires on ``Trainer(ckpt_path=...)`` resume paths. Fresh-train bootstrap from a
@@ -1716,6 +2061,15 @@ class RFDETRModelModule(LightningModule):
         # one parameter group per parameter, a layout the optimizer no longer has. Regroup it so
         # resuming such a run keeps its momentum and LR schedule instead of failing to load.
         regroup_unmerged_optimizer_state(checkpoint)
+        if checkpoint.get("optimizer_states"):
+            self._adopt_resumed_param_group_settings(checkpoint)
+
+        if _is_builtin_fused_adamw(self.train_config.optimizer):
+            destination_fused = self._use_fused_optimizer
+            for optimizer_state in checkpoint.get("optimizer_states", []):
+                for group in optimizer_state.get("param_groups", []):
+                    if "fused" in group:
+                        group["fused"] = destination_fused
 
         # Stash legacy EMA weights for RFDETREMACallback.setup(), which restores
         # them into AveragedModel when resuming from converted legacy checkpoints.
@@ -1728,6 +2082,61 @@ class RFDETRModelModule(LightningModule):
                 UserWarning,
                 stacklevel=2,
             )
+
+    def _adopt_resumed_param_group_settings(self, checkpoint: dict[str, Any]) -> None:
+        """Take the learning-rate and weight-decay settings ``train_config`` leaves out from the resumed checkpoint.
+
+        Defaults, then the checkpoint, then the caller (#1613): a setting in
+        :data:`~rfdetr.training.param_groups._PARAM_GROUP_SETTINGS` that ``train_config`` sets explicitly wins, and one
+        it leaves out takes the value recorded in the checkpoint's ``args``. Except under strategies that restore after
+        setup (FSDP, DeepSpeed), Lightning calls this hook before :meth:`configure_optimizers`, which then builds the
+        optimizer from the resolved config; every checkpoint this run writes records it.
+
+        When ``train_config`` sets any of these explicitly, :meth:`on_train_start` compares each restored parameter
+        group those settings feed with what this run configured and puts back the ones that differ; a group they do not
+        feed keeps what the checkpoint's optimizer holds, even where ``args`` records another value. The comparison is
+        per group rather than against ``args``, because a resume hit by #1613 recorded ``args`` its optimizer never
+        trained with; a resume that sets none of them continues exactly as saved. A group saved without the learning
+        rate it started from (a ``ReduceLROnPlateau`` checkpoint from an earlier release) can only restart at the
+        configured one, which happens only when a learning-rate setting changed.
+
+        A checkpoint written before rfdetr 1.11.1 records no ``args``. Resuming one without setting any of these keeps
+        its saved values; setting one applies the config as given to the groups it feeds, and the settings left out
+        take their defaults there, with a warning naming them.
+
+        Args:
+            checkpoint: Checkpoint dict carrying optimizer state, as passed to :meth:`on_load_checkpoint`.
+        """
+        explicit = _explicit_param_group_settings(self.train_config)
+        self.train_config, restored, overridden = _resolve_resumed_param_group_settings(self.train_config, checkpoint)
+        recorded = isinstance(checkpoint.get("args"), dict)
+        self._reapplied_param_group_settings = explicit
+        changed = overridden if recorded else explicit
+        self._restarts_groups_without_base = any(name != "weight_decay" for name in changed)
+        # global_rank, not trainer.is_global_zero: load_from_checkpoint calls this hook with no trainer attached.
+        if self.global_rank != 0:
+            return
+        if not recorded:
+            unset = [name for name in _PARAM_GROUP_SETTINGS if name not in explicit]
+            if explicit and unset:
+                logger.warning(
+                    "The resumed checkpoint does not record the settings it was trained with (it predates rfdetr "
+                    "1.11.1), so with %s set explicitly, %s use their defaults rather than the values it was trained "
+                    "with in the parameter groups those settings feed.",
+                    ", ".join(explicit),
+                    ", ".join(unset),
+                )
+            return
+        sources = []
+        if restored:
+            sources.append(", ".join(f"{name}={value}" for name, value in restored.items()) + " from the checkpoint")
+        if overridden:
+            sources.append(
+                ", ".join(f"{name}={value} (was {old})" for name, (old, value) in overridden.items())
+                + " set explicitly"
+            )
+        if sources:
+            logger.info("Resuming the optimizer with %s.", "; ".join(sources))
 
     def reinitialize_detection_head(self, num_classes: int) -> None:
         """Reinitialize the detection head for a new class count.

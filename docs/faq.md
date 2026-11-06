@@ -23,7 +23,17 @@ Raising `num_queries` above a variant's default adds new rows to the query embed
 
 ## Which model size should I use?
 
-Pick by the accuracy/latency trade-off in the [pre-trained checkpoints table](learn/run/detection.md#pre-trained-checkpoints): `RFDETRNano` through `RFDETR2XLarge`. `RFDETRSmall` is a good default. The older `RFDETRBase` is legacy — use `RFDETRSmall` instead.
+Pick by the accuracy/latency trade-off in the [pre-trained checkpoints table](learn/run/detection.md#pre-trained-checkpoints): `RFDETRNano` through `RFDETR2XLarge`. `RFDETRSmall` is a good default. The older `RFDETRBase` is legacy — use `RFDETRSmall` instead. Nano to Large are Apache 2.0 and commercially usable out of the box; XLarge and 2XLarge need `rfdetr[plus]` and use PML 1.0 (commercial use included on Roboflow; commercial self-hosting requires the Enterprise add-on). See [licensing](#can-i-use-rf-detr-in-a-commercial-product).
+
+## Can I use RF-DETR in a commercial product?
+
+Yes.
+
+--8<-- "docs/snippets/license-rfdetr.md"
+
+Coming from YOLO? The license terms differ:
+
+--8<-- "docs/snippets/license-yolo-note.md"
 
 ## Do I need to set `num_classes` when fine-tuning or loading a checkpoint?
 
@@ -65,6 +75,8 @@ export ROBOFLOW_HOME=/mnt/shared/models
 
 If both are set, `RF_HOME` wins. This only affects where **bare-filename** weights are cached; an explicit path in `pretrain_weights=` is always honored as given.
 
+Published checkpoints download from `https://repo.roboflow.com/rfdetr`. On a network that only allows listed hosts, allow `repo.roboflow.com`, or copy the files into the cache directory ahead of time: a cached file whose MD5 matches is never downloaded again.
+
 ## What input resolutions are allowed?
 
 `resolution` must be a positive integer divisible by `patch_size × num_windows` for the selected variant (for example, current detection checkpoints use a block size of 32). A non-divisible value raises `ValueError` indicating the required divisor. Input is square; each variant ships a sensible default resolution.
@@ -91,7 +103,7 @@ See [Advanced FP8 setup](learn/train/advanced.md#fp8-training-on-nvidia-cuda) fo
 
 ## What export formats are supported?
 
-ONNX, TFLite (FP32/FP16/INT8), LiteRT (`.tflite` straight from PyTorch via litert-torch), TensorRT (`.trt`), ExecuTorch (XNNPACK, CoreML, QNN), native CoreML (`.mlpackage`), and OpenVINO IR. Install the matching extra — `rfdetr[onnx]`, `rfdetr[tflite]`, `rfdetr[litert]`, `rfdetr[tensorrt]`, `rfdetr[executorch]`, `rfdetr[coreml]`, or `rfdetr[openvino]` — then call `model.export(format=...)`. `format="tensorrt"` (alias `"trt"`) exports ONNX and builds the engine in-process, so it is one call rather than a separate conversion step. Native CoreML (`format="coreml"`) is distinct from the ExecuTorch CoreML backend (`format="executorch", backend="coreml"`) — the former produces a `.mlpackage` directly, the latter a `.pte`. See [Export Model](learn/export.md).
+ONNX, TFLite (FP32/FP16/INT8), LiteRT (`.tflite` straight from PyTorch via litert-torch), TensorRT (`.trt`), ExecuTorch (XNNPACK, CoreML, QNN), native CoreML (`.mlpackage`), and OpenVINO IR. Install the matching extra — `rfdetr[onnx]`, `rfdetr[tflite]`, `rfdetr[litert]`, `rfdetr[tensorrt]`, `rfdetr[executorch]`, `rfdetr[coreml]`, or `rfdetr[openvino]` — then call `model.export(format=...)`. `format="tensorrt"` (alias `"trt"`) exports ONNX and builds the engine in-process, so it is one call rather than a separate conversion step. Native CoreML (`format="coreml"`) is distinct from the ExecuTorch CoreML backend (`format="executorch", backend="coreml"`) — the former produces a `.mlpackage` directly, the latter a `.pte`. See [Export Model](exports/index.md).
 
 ## How do I evaluate a trained model and get mAP?
 
