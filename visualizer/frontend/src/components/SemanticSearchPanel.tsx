@@ -4,6 +4,7 @@ import {
   getJobRecordsByImagePaths,
   getRecordImageUrl,
   getSemanticSearch,
+  getSemanticSearchExportUrl,
 } from "../api/client";
 import type {
   EmbeddingRecordDTO,
@@ -247,6 +248,11 @@ function SemanticSearchResults({
             {isActive &&
               <button onClick={() => cancelSemanticSearch(jobId, searchId)}>{t("cancelSearch")}</button>
             }
+            {(status.results?.length ?? 0) > 0 && (
+              <a href={getSemanticSearchExportUrl(jobId, searchId)} download>
+                <button type="button">{t("exportCsv")}</button>
+              </a>
+            )}
             {status && status.status === "cancelled" && (
               <p className="setup-error">{t("errors.searchCancelledByUser")}</p>
             )}

@@ -190,6 +190,10 @@ export function getSemanticSearch(jobId: string, searchId: string): Promise<Sema
   return request<SemanticSearchStatusResponse>(`/api/v1/dataset_inference_jobs/${jobId}/semantic-search/${searchId}`);
 }
 
+export function getSemanticSearchExportUrl(jobId: string, searchId: string): string {
+  return `${API_BASE_URL}/api/v1/dataset_inference_jobs/${jobId}/semantic-search/${searchId}/export`;
+}
+
 export function cancelSemanticSearch(jobId: string, searchId: string): Promise<CancelSemanticSearchResponse> {
   return request<CancelSemanticSearchResponse>(
     `/api/v1/dataset_inference_jobs/${jobId}/semantic-search/${searchId}`,

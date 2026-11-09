@@ -75,6 +75,7 @@
     "showingNeighbours": "Showing {{count1}} of {{count2}} found neighbors.",
     "searchCancelled": "Search canceled after scanning {{scannedImages}} / {{totalImages}} images.",
     "cancelSearch": "Cancel search",
+    "exportCsv": "Export CSV",
     "searchCompletedSuccessfully": "Search completed successfully",
     "preparingSearch": "Preparing search...",
     "clear": "Clear",

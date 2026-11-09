@@ -75,6 +75,7 @@
     "showingNeighbours": "Mostrando {{count1}} de {{count2}} vecinos encontrados.",
     "searchCancelled": "Búsqueda cancelada tras escanear {{scannedImages}} / {{totalImages}} imágenes.",
     "cancelSearch": "Cancelar búsqueda",
+    "exportCsv": "Exportar CSV",
     "searchCompletedSuccessfully": "Búsqueda finalizada correctamente",
     "preparingSearch": "Preparando búsqueda...",
     "clear": "Limpiar",

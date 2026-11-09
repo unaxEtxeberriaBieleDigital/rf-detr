@@ -21,15 +21,17 @@ Typical flow for the frontend:
 """
 
 import base64
+import csv
+import io
 import json
 import threading
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from rfdetr.utilities.logger import get_logger
 from visualizer.backend.api.schemas import (
@@ -795,6 +797,32 @@ def cancel_semantic_search(job_id: str, search_id: str) -> dict:
     logger.info(f"Requested cancellation for semantic search {search_id} in job {job_id}")
 
     return {"message": "Cancellation requested", "search_id": search_id, "status": "cancelled"}
+
+
+@app.get("/api/v1/dataset_inference_jobs/{job_id}/semantic-search/{search_id}/export")
+def export_semantic_search_csv(job_id: str, search_id: str) -> Response:
+    """Export the semantic-search results as CSV: one row per image, labels joined with ``;``."""
+    job = _get_job_or_404(job_id)
+    search_job = _get_search_job_or_404(search_id)
+
+    labels_by_image: dict[str, list[str]] = {}
+    for r in search_job.results:
+        label = job.categories.get(r.prediction.class_id, f"Clase {r.prediction.class_id}")
+        labels = labels_by_image.setdefault(PureWindowsPath(r.image_path).name, [])
+        if label not in labels:
+            labels.append(label)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["image_id", "labels"])
+    for image_id, labels in labels_by_image.items():
+        writer.writerow([image_id, ";".join(labels)])
+
+    return Response(
+        content="\ufeff" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="semantic_search_{search_id}.csv"'},
+    )
 
 
 # ---------------------------------------------------------------------------
