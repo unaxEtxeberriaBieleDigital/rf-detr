@@ -20,9 +20,8 @@ export default function SetupPage() {
   const { setConfig } = useAppConfig();
   const { t, i18n } = useTranslation();
 
-  const [datasetPath, setDatasetPath] = useState("");
-  const [modelPath, setModelPath] = useState("");
-
+  const [datasetPath, setDatasetPath] = useState("C:\\lat_dataset");
+  const [modelPath, setModelPath] = useState("E:\\rf-detr_training\\trainings\\lat1_large.pth");
   const [datasetTypes, setDatasetTypes] = useState<string[]>([]);
   const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [datasetType, setDatasetType] = useState("");

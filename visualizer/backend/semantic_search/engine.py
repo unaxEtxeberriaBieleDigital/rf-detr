@@ -38,7 +38,7 @@ from visualizer.backend.shared_types.prediction import Prediction
 logger = get_logger()
 
 # Number of units sent to the model per inference call.
-_BATCH_SIZE = 8
+_BATCH_SIZE = 16
 
 
 # Maps search_id -> SearchJob. Kept alongside visualizer.backend.jobs.JOB_STORE; a search

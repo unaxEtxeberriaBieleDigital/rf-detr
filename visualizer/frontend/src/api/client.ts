@@ -13,7 +13,7 @@ import type {
 
 // During development the FastAPI backend is started separately (see visualizer/run_visualizer.*).
 // Production Tauri builds start the packaged backend on this loopback-only endpoint.
-export const API_BASE_URL = "http://localhost:8000";
+export const API_BASE_URL = `http://${window.location.hostname}:8000`;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
