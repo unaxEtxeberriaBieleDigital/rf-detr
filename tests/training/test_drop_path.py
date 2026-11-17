@@ -22,7 +22,6 @@ from rfdetr.models import build_model
 from rfdetr.models.backbone.dinov2 import DinoV2
 from rfdetr.models.backbone.dinov2_with_windowed_attn import (
     Dinov2WithRegistersDropPath,
-    WindowedDinov2WithRegistersBackbone,
 )
 from rfdetr.models.lwdetr import LWDETR
 
@@ -40,21 +39,13 @@ def _nano_args(drop_path: float) -> SimpleNamespace:
 
 
 @pytest.fixture
-def offline_backbone(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Build windowed DINOv2 backbones from their config instead of downloading pretrained weights."""
-    monkeypatch.setattr(
-        WindowedDinov2WithRegistersBackbone, "from_pretrained", classmethod(lambda cls, name, config: cls(config))
-    )
-
-
-@pytest.fixture
-def model_with_drop_path(offline_backbone: None) -> LWDETR:
+def model_with_drop_path() -> LWDETR:
     """Create RF-DETR Nano LWDETR with drop_path enabled."""
     return build_model(_nano_args(0.1))
 
 
 @pytest.fixture
-def model_without_drop_path(offline_backbone: None) -> LWDETR:
+def model_without_drop_path() -> LWDETR:
     """Create RF-DETR Nano LWDETR without drop_path."""
     return build_model(_nano_args(0.0))
 
@@ -104,6 +95,21 @@ def test_update_drop_path_dinov2(model_with_drop_path: LWDETR) -> None:
     assert abs(layers[-1].drop_path.drop_prob - drop_path_rate) < 1e-6, (
         f"Last layer should have drop_prob = {drop_path_rate}"
     )
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_near_one_drop_path_remains_finite(model_with_drop_path: LWDETR, dtype: torch.dtype) -> None:
+    """An accepted near-one rate stays below one and produces finite output."""
+    layers = model_with_drop_path._get_backbone_encoder_layers()
+    assert layers is not None
+    rate = TrainConfig(dataset_dir=".", output_dir=".", drop_path=0.999999999).drop_path
+    model_with_drop_path.update_drop_path(rate, len(layers))
+    assert layers[-1].drop_path.drop_prob == rate
+    inputs = torch.ones(8, 4, dtype=dtype, requires_grad=True)
+    output = layers[-1].drop_path(inputs)
+    output.sum().backward()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(inputs.grad).all()
 
 
 def test_drop_path_module_is_identity_only_for_zero_rate(
@@ -221,7 +227,8 @@ def test_update_drop_path_caps_schedule_at_available_layers(model_with_drop_path
 def test_non_windowed_backbone_warns_drop_path_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify a warning is emitted when drop_path_rate > 0 with non-windowed backbone."""
     mock_backbone = MagicMock()
-    monkeypatch.setattr(dinov2_module, "AutoBackbone", MagicMock(from_pretrained=MagicMock(return_value=mock_backbone)))
+    auto_backbone = MagicMock(from_pretrained=MagicMock(return_value=mock_backbone))
+    monkeypatch.setattr(dinov2_module, "_auto_backbone_class", lambda: auto_backbone)
 
     # The rf-detr logger sets propagate=False, so intercept warning() directly.
     warning_messages: list[str] = []

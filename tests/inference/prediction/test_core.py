@@ -479,13 +479,25 @@ class TestPredictSourceData:
         expected = np.zeros((4, 5, 3), dtype=np.uint8)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            detections = _DummyRFDETR().predict(tensor)
+            actual = core._tensor_to_source_array(tensor)
+
         assert caught == []
-        assert "source_image" in detections.metadata
-        actual = detections.metadata["source_image"]
         assert actual.shape == expected.shape
         assert actual.dtype == expected.dtype
         assert actual.tobytes() == expected.tobytes()
+
+    @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+    def test_predict_rejects_nan_before_forward(self, device: str, mocker: MockerFixture) -> None:
+        """Reject an image with a NaN on either input device before running the model."""
+        tensor = torch.zeros((3, 4, 5), device=device)
+        tensor[0, 0, 0] = torch.nan
+        model = _DummyRFDETR()
+        forward = mocker.spy(model.model.model, "forward")
+
+        with pytest.raises(ValueError, match="below 0 or NaN"):
+            model.predict(tensor)
+
+        forward.assert_not_called()
 
     def test_tensor_with_negative_values_raises(self) -> None:
         """Tensor with negative pixel values raises ValueError."""
@@ -1201,3 +1213,49 @@ class TestNormalizationTensors:
         """A std that underflows to zero in the batch dtype is refused, as ``normalize`` refuses it."""
         with pytest.raises(ValueError, match="std evaluated to zero after conversion to torch.float16"):
             core._normalization_tensors((0.5,), (1e-8,), torch.float16, torch.device("cpu"))
+
+
+@pytest.fixture
+def four_image_dir(tmp_path: Path) -> Path:
+    """A directory of four small PNG images, enough for two batches of two."""
+    for index in range(4):
+        PIL.Image.fromarray(np.full((32, 32, 3), index * 40, dtype=np.uint8)).save(tmp_path / f"{index}.png")
+    return tmp_path
+
+
+class TestDefaultBatch:
+    """``predict(batch=None)`` sizes the batches of an expanded source from the model's batch constraint."""
+
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_fixed_batch_model_runs_directory_in_its_batch_size(
+        self, mocker: MockerFixture, four_image_dir: Path, stream: bool
+    ) -> None:
+        """A directory runs in batches of the fixed batch size of a compiled snapshot or fixed-batch export.
+
+        A predictor from ``inference(batch_size=2)`` rejects every other batch size, so a default of one image per batch
+        made ``predict(folder)`` fail on its first batch unless the caller repeated the size as ``batch``.
+        """
+        live = _DummyRFDETR()._prediction_context()
+        run = mocker.Mock(wraps=live.run)
+        context = replace(live, batch_size=2, run=run)
+
+        results = list(core.predict(lambda: context, four_image_dir, stream=stream))
+
+        assert len(results) == 4
+        assert [call.args[0].shape[0] for call in run.call_args_list] == [2, 2]
+
+    def test_dynamic_batch_model_runs_eager_directory_in_one_batch(
+        self, mocker: MockerFixture, four_image_dir: Path
+    ) -> None:
+        """An eager directory on a model without a fixed batch size runs up to eight images per batch.
+
+        Four images fit in one batch of the eight-image default, so the forward pass runs once.
+        """
+        live = _DummyRFDETR()._prediction_context()
+        run = mocker.Mock(wraps=live.run)
+        context = replace(live, run=run)
+
+        results = core.predict(lambda: context, four_image_dir)
+
+        assert len(results) == 4
+        assert [call.args[0].shape[0] for call in run.call_args_list] == [4]

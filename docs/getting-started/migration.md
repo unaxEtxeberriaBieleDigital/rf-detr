@@ -14,25 +14,41 @@ You can apply all changes in one go; working through sections one release at a t
 
 ---
 
-## Unreleased: native inference returns a predictor
+## Unreleased: `transformers` is no longer a core dependency
 
-`RFDETR.inference()` now returns an independent `RFDETRInference` snapshot instead of changing the source model's inference state. Capture the returned predictor and call `predict()` on it. The predictor snapshots the current base weights, labels, normalization and postprocessing settings; later training or source mutations do not change its predictions or class names. The source model remains unchanged.
+`pip install rfdetr` no longer installs `transformers`, `tokenizers`, `huggingface_hub` or `safetensors`. Importing `rfdetr`, building released models, predicting, training from RF-DETR weights and loading non-LoRA checkpoints do not need them. Loading a LoRA checkpoint requires `peft`, available through `rfdetr[lora]`. `rfdetr[train]` and `rfdetr[lora]` still install all four through `peft`.
 
-```python
-from rfdetr import RFDETRSmall
+Install the packages yourself if any of these applies:
 
-model = RFDETRSmall()
-predictor = model.inference(compile=False)
-detections = predictor.predict("image.jpg")
-```
+- Your own code imports `transformers` and relied on `rfdetr` to install it: `pip install transformers`.
+- You build a patch-14 DINOv2 backbone with 37 positional encodings and `pretrain_weights=None`, such as the deprecated RF-DETR Base configs, which download DINOv2 weights from the Hugging Face Hub: `pip install huggingface_hub safetensors`.
+- You build a non-windowed DINOv2 backbone (`DinoV2(use_windowed_attn=False)`): `pip install transformers`.
 
-The defaults are batch size 1 and float32, compiled with TorchScript, captured as a CUDA graph on CUDA, or compiled with inductor on Apple Silicon (MPS) when the installed PyTorch has its MPS code generator; pass `compile_backend="torchscript"` on either to keep TorchScript alone. Pass `compile=False` for eager CPU inference. The removed `inplace` keyword is rejected. Each predictor owns one copy of the current base weights; deleting it releases its runtime when no other references remain. The legacy `remove_optimized_model()` and `is_optimized_inplace` APIs remain for legacy model state and do not manage predictor lifetime. Direct `RFDETRInference(live_model)` construction still borrows the live model; checkpoint and export paths keep their existing owned loading behavior.
+Without the required packages, the two backbone cases raise an `ImportError` with the install command.
+
+The DINOv2 backbone classes in `rfdetr.models.backbone.dinov2_with_windowed_attn` are now plain `torch.nn.Module` subclasses. `from_pretrained`, `save_pretrained`, `push_to_hub` and `isinstance` checks against `transformers` classes no longer apply to them, and their outputs are dataclasses read by attribute, not by index.
 
 ---
 
 ## Upgrade 1.11 → 1.12
 
 For new image-prediction integrations, use the shared [`RFDETRInference`](../learn/inference.md) API with a live native model, checkpoint, or supported full export. It returns decoded Supervision results and handles preprocessing; keep format-specific session APIs for raw-runtime workflows.
+
+### Breaking changes
+
+!!! warning "Breaking: native inference returns a predictor"
+
+    `RFDETR.inference()` now returns an independent `RFDETRInference` snapshot instead of changing the source model's inference state. Capture the returned predictor and call `predict()` on it. The predictor snapshots the current base weights, labels, normalization and postprocessing settings; later training or source mutations do not change its predictions or class names. The source model remains unchanged.
+
+    ```python
+    from rfdetr import RFDETRSmall
+
+    model = RFDETRSmall()
+    predictor = model.inference(compile=False)
+    detections = predictor.predict("image.jpg")
+    ```
+
+    The defaults are batch size 1 and float32, compiled with TorchScript, captured as a CUDA graph on CUDA, or compiled with inductor on Apple Silicon (MPS) when the installed PyTorch has its MPS code generator; pass `compile_backend="torchscript"` on either to keep TorchScript alone. Pass `compile=False` for eager CPU inference. The removed `inplace` keyword is rejected. Each predictor owns one copy of the current base weights; deleting it releases its runtime when no other references remain. The legacy `remove_optimized_model()` and `is_optimized_inplace` APIs remain for legacy model state and do not manage predictor lifetime. Direct `RFDETRInference(live_model)` construction still borrows the live model; checkpoint and export paths keep their existing owned loading behavior.
 
 ### Removed in v1.12
 
@@ -196,7 +212,7 @@ For new image-prediction integrations, use the shared [`RFDETRInference`](../lea
 
 !!! warning "Removed: `RFDETR.optimize_for_inference()`"
 
-    The alias deprecated in v1.9.0 is gone. `RFDETR.inference()` kept the same signature when that alias was removed; it now returns an independent predictor. Capture the result and call `predict()` on it. See [native inference snapshots](#unreleased-native-inference-returns-a-predictor) for the current behavior.
+    The alias deprecated in v1.9.0 is gone. `RFDETR.inference()` kept the same signature when that alias was removed; it now returns an independent predictor. Capture the result and call `predict()` on it. See [native inference snapshots](#breaking-changes) for the current behavior.
 
     ```python
     # Before (removed)
@@ -426,7 +442,7 @@ The following APIs were deprecated in earlier releases and are removed as of v1.
 
 !!! note "Deprecated: `RFDETR.optimize_for_inference()` renamed to `RFDETR.inference()`"
 
-    **`optimize_for_inference(compile=..., batch_size=..., dtype=..., inplace=..., compile_backend=...)`** — renamed to `inference()` with the same signature at the time of deprecation. The current factory returns an independent predictor; see [native inference snapshots](#unreleased-native-inference-returns-a-predictor).
+    **`optimize_for_inference(compile=..., batch_size=..., dtype=..., inplace=..., compile_backend=...)`** — renamed to `inference()` with the same signature at the time of deprecation. The current factory returns an independent predictor; see [native inference snapshots](#breaking-changes).
 
     ```python
     # Before (deprecated)

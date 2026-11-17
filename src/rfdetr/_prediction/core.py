@@ -737,10 +737,12 @@ def predict(
         include_source_image: Store source pixels in each result.
         antialias: Use antialiasing during image resize. Match the checkpoint training resize.
         stream: Yield results on demand instead of collecting them.
-        batch: Maximum batch size. None runs a bare BCHW tensor or an eager image-only list as one batch, an eager
+        batch: Maximum finite-source batch size. None runs a bare BCHW tensor or an eager image-only list as one batch,
+            finite expanded or streamed sources in batches of the model's fixed batch size when it has one, an eager
             directory or glob (or a list of them) in batches of eight, or of an export's smaller ``max_batch_size``,
-            when the model has no fixed batch size, and other expanded or streamed sources one image or frame at a
-            time. An integer bounds every batch.
+            when the model has no fixed batch size, and other finite sources one image or frame at a time. An integer
+            bounds those batches. Live captures and ``.streams`` keep one frame per source in each simultaneous batch,
+            regardless of this setting; the source count must match a fixed runtime batch size.
         vid_stride: Read every Nth video frame.
         stream_buffer: Queue live frames instead of retaining the latest frame.
         prepare_ahead: Let a CUDA context build the next batch's input while the current batch runs. That reads the
@@ -797,12 +799,15 @@ _ROW_KEYS = frozenset({"boxes", "scores", "labels"})
 def _default_batch(images: _PredictionInput, context: PredictionContext, *, stream: bool) -> int:
     """Choose the batch size for an expanded or streamed source when the caller passes ``batch=None``.
 
-    A BCHW tensor already is one batch. An eager directory or glob runs in batches of :data:`_DEFAULT_EAGER_BATCH` on a
-    model or export without a fixed batch size, or of the export's ``max_batch_size`` when that is smaller; its results
-    are collected anyway, so batching costs no latency. Batching raises peak memory (about 35% more resident memory for
-    a Nano ONNX export on the ONNX Runtime CPU provider, with no measured gain in throughput there), so a memory-bound
-    host passes ``batch=1``. Streamed sources keep one image per batch, so the first result arrives after one image,
-    and a compiled snapshot or fixed-batch export keeps it too.
+    A BCHW tensor already is one batch. A compiled snapshot or fixed-batch export runs only its own batch size, so
+    finite expanded sources run in batches of that size, streamed or not; a final batch with fewer images is still
+    refused. Live captures and ``.streams`` preserve simultaneous groups regardless of this size, with one frame per
+    source; their source count must match a fixed runtime batch size. An eager directory or glob runs in batches of
+    :data:`_DEFAULT_EAGER_BATCH` on a model or export without a fixed batch size, or of the export's ``max_batch_size``
+    when that is smaller; its results are collected anyway, so
+    batching costs no latency. Batching raises peak memory (about 35% more resident memory for a Nano ONNX export on the
+    ONNX Runtime CPU provider, with no measured gain in throughput there), so a memory-bound host passes ``batch=1``.
+    Other finite streamed sources keep one image per batch, so the first result arrives after one image.
 
     Args:
         images: The prediction source.
@@ -819,8 +824,10 @@ def _default_batch(images: _PredictionInput, context: PredictionContext, *, stre
     if isinstance(images, torch.Tensor) and images.ndim == 4:
         # Split a BCHW tensor only when the caller bounds the batch size.
         return max(images.shape[0], 1)
-    # A fixed input resolution does not fix the batch axis, so only a fixed batch size keeps one image per batch.
-    if not stream and context.batch_size is None and has_only_finite_images(images):
+    if context.batch_size is not None:
+        # Any other size fails every batch against the compiled or exported batch axis.
+        return context.batch_size
+    if not stream and has_only_finite_images(images):
         if context.max_batch_size is None:
             return _DEFAULT_EAGER_BATCH
         return min(_DEFAULT_EAGER_BATCH, context.max_batch_size)
@@ -1093,7 +1100,9 @@ def _prepare_batch(
             if include_source_image:
                 source_array = np.array(img)
                 if source_array.dtype != np.uint8:
-                    source_array = (source_array * 255).clip(0, 255).astype(np.uint8)
+                    # Defer invalid pixels to the range checks below, even when NumPy is set to raise on a cast.
+                    with np.errstate(invalid="ignore"):
+                        source_array = (source_array * 255).clip(0, 255).astype(np.uint8)
                 source_images.append(source_array)
             uint8_array = isinstance(img, np.ndarray) and img.dtype == np.uint8
             if isinstance(img, np.ndarray) and any(stride < 0 for stride in img.strides):
@@ -1133,7 +1142,8 @@ def _prepare_batch(
         elif include_source_image and img.dim() == 3:
             # Source extraction requires a (C, H, W) tensor for permute(). Skip malformed ranks so the deferred
             # validation below raises the public shape error instead of an internal RuntimeError.
-            source_images.append(_tensor_to_source_array(img))
+            with np.errstate(invalid="ignore"):
+                source_images.append(_tensor_to_source_array(img))
 
         # img.dim() != 3 is checked alongside the channel count (not just deferred as a message
         # detail) because `h, w = img_tensor.shape[1:]` a few lines down unpacks exactly 2 values --
@@ -1145,7 +1155,8 @@ def _prepare_batch(
         pending_checks.append(
             (
                 False if range_known_valid else (img > 1).any(),
-                False if range_known_valid else (img < 0).any(),
+                # A NaN fails the lower-bound comparison, so the same reduction catches it.
+                True if range_known_valid else (img >= 0).all(),
                 invalid_shape,
                 tuple(img.shape),
             )
@@ -1184,17 +1195,16 @@ def _prepare_batch(
 
     # Force the range-check results to Python bools only now, after every image's conversion,
     # range-check kernels, and transfer have all been queued (see the comment where
-    # pending_checks is built). Same nested per-image, per-condition order as the original inline
-    # checks (image 0's "above 1", then "below 0", then its shape check; then image 1's, ...), so
-    # which of the three messages a given multi-image, multi-violation input raises is unchanged.
-    for invalid_high, invalid_low, invalid_shape, img_shape in pending_checks:
+    # pending_checks is built). Within each image, check the upper bound first, then the lower
+    # bound and NaN, then the shape, before considering the next image.
+    for invalid_high, valid_low, invalid_shape, img_shape in pending_checks:
         if invalid_high:
             raise ValueError(
                 "Image has pixel values above 1. Please ensure the image is normalized (scaled to [0, 1]).",
             )
-        if invalid_low:
+        if not valid_low:
             raise ValueError(
-                "Image has pixel values below 0. Please ensure the image is normalized (scaled to [0, 1]).",
+                "Image has pixel values below 0 or NaN. Please ensure the image is normalized (scaled to [0, 1]).",
             )
         if invalid_shape:
             raise ValueError(
@@ -1295,6 +1305,7 @@ def _decode_batch(prepared: _PreparedBatch, predictions: dict[str, torch.Tensor]
         # its output size via `nonzero(bool_mask)` on every call (a documented CUDA host-device
         # sync), while `t[int64_index]` is index_select-shaped and needs no further sync. Row order
         # is unaffected — `nonzero` returns ascending indices, identical to bool-mask selection order.
+        num_rows = scores.shape[0]
         if label_thresholds is None:
             keep_idx = (scores > score_floor).nonzero(as_tuple=True)[0]
         else:
@@ -1314,7 +1325,15 @@ def _decode_batch(prepared: _PreparedBatch, predictions: dict[str, torch.Tensor]
         # image's tensor forward instead of raising. Rebinding every iteration makes that failure
         # mode a loud AttributeError/TypeError on the stale `None` instead of a silent wrong value.
         keypoints = result["keypoints"][keep_idx] if has_keypoints_result else None
-        masks = result["masks"][keep_idx] if has_masks else None
+        masks = result["masks"] if has_masks else None
+        # PostProcess already filters segmentation rows at score_floor. If every score row survives this predicate,
+        # keep_idx is the identity over the score rows, and it is also the identity over the mask rows only when
+        # both have the same count: a postprocessor returning fewer mask rows than score rows must still reach the
+        # gather below so the row mismatch surfaces instead of silently pairing the wrong rows.
+        # Skipping the gather avoids copying the entire full-resolution mask tensor on the accelerator.
+        all_masks_kept = masks is not None and keep_idx.numel() == num_rows == masks.shape[0]
+        if masks is not None and not all_masks_kept:
+            masks = masks[keep_idx]
         keypoint_precision = result["keypoint_precision_cholesky"][keep_idx] if has_kp_precision else None
 
         # PERF: queue every GPU->CPU transfer for this image as non_blocking, then
@@ -1353,7 +1372,14 @@ def _decode_batch(prepared: _PreparedBatch, predictions: dict[str, torch.Tensor]
             # A synchronous accelerator blocks on every copy; pay that wait once for the three row tensors.
             boxes_cpu, scores_cpu, labels_cpu = _copy_rows_to_cpu_once(boxes, scores, labels)
         keypoints_cpu = keypoints.float().to("cpu", non_blocking=is_cuda) if keypoints is not None else None
-        masks_cpu = masks.squeeze(1).to("cpu", non_blocking=is_cuda) if masks is not None else None
+        # Preserve independent output storage for CPU postprocessors too; the device-to-host transfer already
+        # supplies that copy for accelerator tensors, without an intermediate copy on the accelerator. `masks` still
+        # being the postprocessor's own tensor (no gather happened) is what makes the copy necessary.
+        masks_cpu = (
+            masks.squeeze(1).to("cpu", non_blocking=is_cuda, copy=masks is result["masks"])
+            if masks is not None
+            else None
+        )
         keypoint_precision_cpu = (
             keypoint_precision.float().to("cpu", non_blocking=is_cuda) if keypoint_precision is not None else None
         )
